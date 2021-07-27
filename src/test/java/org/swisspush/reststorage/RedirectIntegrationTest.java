@@ -1,15 +1,15 @@
 package org.swisspush.reststorage;
 
-import com.jayway.restassured.RestAssured;
-import com.jayway.restassured.http.ContentType;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static com.jayway.restassured.RestAssured.get;
-import static com.jayway.restassured.RestAssured.with;
+import static io.restassured.RestAssured.get;
+import static io.restassured.RestAssured.with;
 
 @RunWith(VertxUnitRunner.class)
 public class RedirectIntegrationTest extends RedisStorageIntegrationTestCase {

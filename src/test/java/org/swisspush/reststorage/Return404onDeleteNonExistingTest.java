@@ -2,7 +2,7 @@ package org.swisspush.reststorage;
 
 import org.junit.Test;
 
-import static com.jayway.restassured.RestAssured.when;
+import static io.restassured.RestAssured.when;
 
 public class Return404onDeleteNonExistingTest extends RedisStorageIntegrationTestCase {
 

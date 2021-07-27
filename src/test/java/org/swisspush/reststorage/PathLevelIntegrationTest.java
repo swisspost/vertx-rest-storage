@@ -1,13 +1,13 @@
 package org.swisspush.reststorage;
 
-import com.jayway.restassured.RestAssured;
+import io.restassured.RestAssured;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static com.jayway.restassured.RestAssured.*;
+import static io.restassured.RestAssured.*;
 
 @RunWith(VertxUnitRunner.class)
 public class PathLevelIntegrationTest extends RedisStorageIntegrationTestCase {

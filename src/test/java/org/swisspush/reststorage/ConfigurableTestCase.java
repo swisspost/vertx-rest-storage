@@ -1,7 +1,7 @@
 package org.swisspush.reststorage;
 
-import com.jayway.restassured.builder.RequestSpecBuilder;
-import com.jayway.restassured.specification.RequestSpecification;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.specification.RequestSpecification;
 import io.vertx.core.Vertx;
 import io.vertx.ext.unit.TestContext;
 import org.junit.After;

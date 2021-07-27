@@ -244,7 +244,9 @@ The data is stored in a redis database.
 Caution: The redis storage implementation does not currently support streaming. Avoid transfering too big payloads since they will be entirely copied in memory.
 
 ## Dependencies
-This module uses Vert.x v3.3.3 (or later), so **Java 8** is required.
+- Starting from 2.6.x rest-storage requires **Java 11**.
+
+- This module uses Vert.x v3.3.3 (or later), so **Java 8** is required.
 
 
 [![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/lbovet/vertx-rest-storage/trend.png)](https://bitdeli.com/free "Bitdeli Badge") 

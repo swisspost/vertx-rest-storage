@@ -3,7 +3,7 @@ package org.swisspush.reststorage;
 import org.junit.Test;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
-import static com.jayway.restassured.RestAssured.when;
+import static io.restassured.RestAssured.when;
 
 public class Return200onDeleteNonExistingTest extends RedisStorageIntegrationTestCase {
 

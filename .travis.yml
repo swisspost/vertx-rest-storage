@@ -1,11 +1,15 @@
 language: java
-dist: xenial
+dist: bionic
 jdk:
   - oraclejdk11
 services:
    - redis-server
 before_install:
     - chmod +x maybe-release.sh
+    # install groovy
+    - curl -s get.sdkman.io | bash
+    - source "$HOME/.sdkman/bin/sdkman-init.sh"
+    - sdk install groovy 3.0.8
 install:
     - mvn install -Dmaven.javadoc.skip=true -B -V
 before_script:

@@ -3,7 +3,7 @@ dist: bionic
 jdk:
   - oraclejdk11
 services:
-   - redis-server
+   - redis
 before_install:
     - chmod +x maybe-release.sh
     # install groovy

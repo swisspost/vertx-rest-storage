@@ -1,21 +1,26 @@
 package org.swisspush.reststorage.mocks;
 
+import io.netty.handler.codec.DecoderResult;
+import io.vertx.core.Context;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
+import io.vertx.core.http.impl.HttpServerRequestInternal;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
+import java.util.Set;
 
 
 /**
  * Simple base class for mocking.
  */
-public class FailFastVertxHttpServerRequest implements HttpServerRequest {
+public class FailFastVertxHttpServerRequest implements HttpServerRequestInternal {
 
     protected final String msg;
 
@@ -48,6 +53,11 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
     }
 
     @Override
+    public HttpServerRequest fetch(long amount) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public HttpServerRequest endHandler(Handler<Void> endHandler) {
         throw new UnsupportedOperationException(msg);
     }
@@ -59,11 +69,6 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
 
     @Override
     public HttpMethod method() {
-        throw new UnsupportedOperationException(msg);
-    }
-
-    @Override
-    public String rawMethod() {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -95,6 +100,11 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
     @Override
     public String host() {
         throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public long bytesRead() {
+        return 0;
     }
 
     @Override
@@ -153,7 +163,17 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
     }
 
     @Override
-    public NetSocket netSocket() {
+    public Future<Buffer> body() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<Void> end() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<NetSocket> toNetSocket() {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -168,7 +188,7 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
     }
 
     @Override
-    public HttpServerRequest uploadHandler( Handler<HttpServerFileUpload> uploadHandler) {
+    public HttpServerRequest uploadHandler(Handler<HttpServerFileUpload> uploadHandler) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -183,7 +203,7 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
     }
 
     @Override
-    public ServerWebSocket upgrade() {
+    public Future<ServerWebSocket> toWebSocket() {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -199,6 +219,46 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequest {
 
     @Override
     public HttpConnection connection() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public HttpServerRequest streamPriorityHandler(Handler<StreamPriority> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public DecoderResult decoderResult() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Cookie getCookie(String name) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Cookie getCookie(String name, String domain, String path) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Set<Cookie> cookies(String name) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Set<Cookie> cookies() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Context context() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Object metric() {
         throw new UnsupportedOperationException(msg);
     }
 }

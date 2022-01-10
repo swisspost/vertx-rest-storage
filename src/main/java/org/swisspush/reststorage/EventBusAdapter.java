@@ -1,13 +1,13 @@
 package org.swisspush.reststorage;
 
+import io.netty.handler.codec.DecoderResult;
 import io.netty.handler.codec.http.QueryStringDecoder;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Handler;
-import io.vertx.core.MultiMap;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.*;
+import io.vertx.core.http.impl.HttpServerRequestInternal;
+import io.vertx.core.http.impl.headers.HeadersMultiMap;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.NetSocket;
@@ -18,6 +18,7 @@ import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Provides a direct eventbus interface.
@@ -30,7 +31,7 @@ public class EventBusAdapter {
         vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> requestHandler.handle(new MappedHttpServerRequest(vertx, message)));
     }
 
-    private class MappedHttpServerRequest implements HttpServerRequest {
+    private class MappedHttpServerRequest implements HttpServerRequestInternal {
         private Vertx vertx;
         private Buffer requestPayload;
         private HttpMethod method;
@@ -48,23 +49,23 @@ public class EventBusAdapter {
             this.vertx = vertx;
             this.message = message;
             Buffer buffer = message.body();
-            int headerLength =  buffer.getInt(0);
-            JsonObject header = new JsonObject(buffer.getString(4,headerLength+4));
+            int headerLength = buffer.getInt(0);
+            JsonObject header = new JsonObject(buffer.getString(4, headerLength + 4));
             method = httpMethodFromHeader(header);
             uri = header.getString("uri");
-            requestPayload = buffer.getBuffer(headerLength+4, buffer.length());
+            requestPayload = buffer.getBuffer(headerLength + 4, buffer.length());
 
             JsonArray headerArray = header.getJsonArray("headers");
-            if(headerArray != null) {
+            if (headerArray != null) {
                 requestHeaders = fromJson(headerArray);
             } else {
-                requestHeaders = new CaseInsensitiveHeaders();
+                requestHeaders = new HeadersMultiMap();
             }
         }
 
-        private HttpMethod httpMethodFromHeader(JsonObject header){
+        private HttpMethod httpMethodFromHeader(JsonObject header) {
             String method = header.getString("method");
-            if(method != null){
+            if (method != null) {
                 return HttpMethod.valueOf(method.toUpperCase());
             }
             return null;
@@ -80,14 +81,16 @@ public class EventBusAdapter {
             return method;
         }
 
-        @Override
-        public String rawMethod() { return method.toString(); }
 
         @Override
-        public boolean isSSL() { return false; }
+        public boolean isSSL() {
+            return false;
+        }
 
         @Override
-        public String scheme() { throw new UnsupportedOperationException(); }
+        public String scheme() {
+            throw new UnsupportedOperationException();
+        }
 
         @Override
         public String uri() {
@@ -96,7 +99,7 @@ public class EventBusAdapter {
 
         @Override
         public String path() {
-            if(path==null) {
+            if (path == null) {
                 path = UrlParser.path(uri);
             }
             return path;
@@ -104,23 +107,30 @@ public class EventBusAdapter {
 
         @Override
         public String query() {
-            if(query==null) {
+            if (query == null) {
                 query = UrlParser.query(uri);
             }
             return query;
         }
 
         @Override
-        public String host() { throw new UnsupportedOperationException(); }
+        public String host() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public long bytesRead() {
+            return 0;
+        }
 
         @Override
         public HttpServerResponse response() {
-            if(response == null) {
+            if (response == null) {
                 response = new HttpServerResponse() {
 
                     private int statusCode;
                     private String statusMessage;
-                    private MultiMap responseHeaders = new CaseInsensitiveHeaders();
+                    private MultiMap responseHeaders = new HeadersMultiMap();
                     private Buffer responsePayload = Buffer.buffer();
 
                     @Override
@@ -224,21 +234,37 @@ public class EventBusAdapter {
                     }
 
                     @Override
-                    public HttpServerResponse write(Buffer buffer) {
+                    public Future<Void> write(String chunk, String enc) {
+                        return null;
+                    }
+
+                    @Override
+                    public Future<Void> write(Buffer buffer) {
                         responsePayload.appendBuffer(buffer);
-                        return this;
+                        return Future.succeededFuture();
                     }
 
                     @Override
-                    public HttpServerResponse write(String s, String s2) {
-                        responsePayload.appendBuffer(Buffer.buffer(s, s2));
-                        return this;
+                    public void write(Buffer data, Handler<AsyncResult<Void>> handler) {
+                        responsePayload.appendBuffer(data);
+                        handler.handle(Future.succeededFuture());
                     }
 
                     @Override
-                    public HttpServerResponse write(String s) {
-                        responsePayload.appendBuffer(Buffer.buffer(s));
-                        return this;
+                    public void write(String chunk, String enc, Handler<AsyncResult<Void>> handler) {
+                        responsePayload.appendBuffer(Buffer.buffer(chunk, enc));
+                        handler.handle(Future.succeededFuture());
+                    }
+
+                    @Override
+                    public Future<Void> write(String chunk) {
+                        return null;
+                    }
+
+                    @Override
+                    public void write(String chunk, Handler<AsyncResult<Void>> handler) {
+                        responsePayload.appendBuffer(Buffer.buffer(chunk));
+                        handler.handle(Future.succeededFuture());
                     }
 
                     @Override
@@ -247,25 +273,43 @@ public class EventBusAdapter {
                     }
 
                     @Override
-                    public void end(String s) {
-                        write(Buffer.buffer(s));
-                        end();
+                    public Future<Void> end(String chunk) {
+                        write(Buffer.buffer(chunk));
+                        return end();
                     }
 
                     @Override
-                    public void end(String s, String s2) {
-                        write(s, s2);
-                        end();
+                    public void end(String chunk, Handler<AsyncResult<Void>> handler) {
+                        write(Buffer.buffer(chunk));
+                        end().onComplete(handler);
                     }
 
                     @Override
-                    public void end(Buffer buffer) {
-                        write(buffer);
-                        end();
+                    public Future<Void> end(String chunk, String enc) {
+                        write(chunk, enc);
+                        return end();
                     }
 
                     @Override
-                    public void end() {
+                    public void end(String chunk, String enc, Handler<AsyncResult<Void>> handler) {
+                        write(chunk, enc);
+                        end().onComplete(handler);
+                    }
+
+                    @Override
+                    public Future<Void> end(Buffer chunk) {
+                        write(chunk);
+                        return end();
+                    }
+
+                    @Override
+                    public void end(Buffer chunk, Handler<AsyncResult<Void>> handler) {
+                        write(chunk);
+                        end().onComplete(handler);
+                    }
+
+                    @Override
+                    public Future<Void> end() {
                         JsonObject header = new JsonObject();
                         if (statusCode == 0) {
                             statusCode = 200;
@@ -275,21 +319,22 @@ public class EventBusAdapter {
                         header.put("statusMessage", statusMessage);
                         header.put("headers", toJson(responseHeaders));
                         Buffer bufferHeader = Buffer.buffer(header.encode());
-                        Buffer response = Buffer.buffer(4+bufferHeader.length()+responsePayload.length());
+                        Buffer response = Buffer.buffer(4 + bufferHeader.length() + responsePayload.length());
                         response.setInt(0, bufferHeader.length()).appendBuffer(bufferHeader).appendBuffer(responsePayload);
                         message.reply(response);
+                        return Future.succeededFuture();
                     }
 
                     @Override
-                    public HttpServerResponse sendFile(String s) {
-                        throw new UnsupportedOperationException();
+                    public void end(Handler<AsyncResult<Void>> handler) {
+                        end().onComplete(handler);
                     }
 
                     @Override
-                    public HttpServerResponse sendFile(String filename, long offset) { throw new UnsupportedOperationException(); }
+                    public Future<Void> sendFile(String filename, long offset, long length) {
+                        return null;
+                    }
 
-                    @Override
-                    public HttpServerResponse sendFile(String filename, long offset, long length) { throw new UnsupportedOperationException(); }
 
                     @Override
                     public HttpServerResponse sendFile(String s, Handler<AsyncResult<Void>> asyncResultHandler) {
@@ -307,7 +352,9 @@ public class EventBusAdapter {
                     }
 
                     @Override
-                    public void close() {}
+                    public void close() {
+                        throw new UnsupportedOperationException();
+                    }
 
                     @Override
                     public boolean ended() {
@@ -340,7 +387,9 @@ public class EventBusAdapter {
                     }
 
                     @Override
-                    public int streamId() { throw new UnsupportedOperationException(); }
+                    public int streamId() {
+                        throw new UnsupportedOperationException();
+                    }
 
                     @Override
                     public HttpServerResponse push(HttpMethod method, String host, String path, Handler<AsyncResult<HttpServerResponse>> handler) {
@@ -363,13 +412,38 @@ public class EventBusAdapter {
                     }
 
                     @Override
-                    public void reset(long code) {
-                        throw new UnsupportedOperationException();
+                    public Future<HttpServerResponse> push(HttpMethod method, String host, String path, MultiMap headers) {
+                        return null;
+                    }
+
+                    @Override
+                    public boolean reset(long code) {
+                        return false;
                     }
 
                     @Override
                     public HttpServerResponse writeCustomFrame(int type, int flags, Buffer payload) {
                         throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public HttpServerResponse addCookie(Cookie cookie) {
+                        return null;
+                    }
+
+                    @Override
+                    public Cookie removeCookie(String name, boolean invalidate) {
+                        return null;
+                    }
+
+                    @Override
+                    public Set<Cookie> removeCookies(String name, boolean invalidate) {
+                        return null;
+                    }
+
+                    @Override
+                    public Cookie removeCookie(String name, String domain, String path, boolean invalidate) {
+                        return null;
                     }
 
                     @Override
@@ -416,9 +490,9 @@ public class EventBusAdapter {
             if (params == null) {
                 QueryStringDecoder queryStringDecoder = new QueryStringDecoder(uri());
                 Map<String, List<String>> prms = queryStringDecoder.parameters();
-                params = new CaseInsensitiveHeaders();
+                params = new HeadersMultiMap();
                 if (!prms.isEmpty()) {
-                    for (Map.Entry<String, List<String>> entry: prms.entrySet()) {
+                    for (Map.Entry<String, List<String>> entry : prms.entrySet()) {
                         params.add(entry.getKey(), entry.getValue());
                     }
                 }
@@ -457,7 +531,17 @@ public class EventBusAdapter {
         }
 
         @Override
-        public NetSocket netSocket() {
+        public Future<Buffer> body() {
+            return null;
+        }
+
+        @Override
+        public Future<Void> end() {
+            return null;
+        }
+
+        @Override
+        public Future<NetSocket> toNetSocket() {
             return null;
         }
 
@@ -487,8 +571,8 @@ public class EventBusAdapter {
         }
 
         @Override
-        public ServerWebSocket upgrade() {
-            throw new UnsupportedOperationException();
+        public Future<ServerWebSocket> toWebSocket() {
+            return null;
         }
 
         @Override
@@ -507,9 +591,39 @@ public class EventBusAdapter {
         }
 
         @Override
+        public HttpServerRequest streamPriorityHandler(Handler<StreamPriority> handler) {
+            return null;
+        }
+
+        @Override
+        public DecoderResult decoderResult() {
+            return null;
+        }
+
+        @Override
+        public Cookie getCookie(String name) {
+            return null;
+        }
+
+        @Override
+        public Cookie getCookie(String name, String domain, String path) {
+            return null;
+        }
+
+        @Override
+        public Set<Cookie> cookies(String name) {
+            return null;
+        }
+
+        @Override
+        public Set<Cookie> cookies() {
+            return null;
+        }
+
+        @Override
         public HttpServerRequest endHandler(Handler<Void> voidHandler) {
             endHandler = voidHandler;
-            if(requestPayload == null) {
+            if (requestPayload == null) {
                 endHandler.handle(null);
             }
             return this;
@@ -526,13 +640,18 @@ public class EventBusAdapter {
         }
 
         @Override
+        public HttpServerRequest fetch(long amount) {
+            return null;
+        }
+
+        @Override
         public HttpServerRequest exceptionHandler(Handler<Throwable> throwableHandler) {
             return this;
         }
 
         @Override
         public HttpServerRequest handler(Handler<Buffer> bufferHandler) {
-            if(requestPayload != null) {
+            if (requestPayload != null) {
                 dataHandler = bufferHandler;
                 vertx.runOnContext(aVoid -> {
                     dataHandler.handle(requestPayload);
@@ -541,18 +660,28 @@ public class EventBusAdapter {
             }
             return this;
         }
+
+        @Override
+        public Context context() {
+            return null;
+        }
+
+        @Override
+        public Object metric() {
+            return null;
+        }
     }
 
     public static JsonArray toJson(MultiMap multiMap) {
         JsonArray result = new JsonArray();
-        for(Map.Entry<String, String> entry: multiMap.entries()) {
+        for (Map.Entry<String, String> entry : multiMap.entries()) {
             result.add(new JsonArray().add(entry.getKey()).add(entry.getValue()));
         }
         return result;
     }
 
     public static MultiMap fromJson(JsonArray json) {
-        MultiMap result = new CaseInsensitiveHeaders();
+        MultiMap result = new HeadersMultiMap();
         for (Object next : json) {
             if (next instanceof JsonArray) {
                 JsonArray pair = (JsonArray) next;

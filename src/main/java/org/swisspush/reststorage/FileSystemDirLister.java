@@ -1,7 +1,7 @@
 package org.swisspush.reststorage;
 
-import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -37,9 +37,9 @@ public class FileSystemDirLister {
         // Delegate work to worker thread from thread pool.
         log.trace("Delegate to worker pool");
         final long startTimeMillis = System.currentTimeMillis();
-        vertx.executeBlocking(future -> {
+        vertx.executeBlocking(promise -> {
             log.trace("Welcome on worker-thread.");
-            listDirBlocking(path, offset, count, (Future<CollectionResource>) (Future<?>) future);
+            listDirBlocking(path, offset, count, (Promise<CollectionResource>) (Promise<?>) promise);
             log.trace("worker-thread says bye.");
         }, event -> {
             log.trace("Welcome back on eventloop-thread.");
@@ -64,7 +64,7 @@ public class FileSystemDirLister {
         log.trace("Work delegated.");
     }
 
-    private void listDirBlocking(String path, int offset, int count, Future<CollectionResource> future) {
+    private void listDirBlocking(String path, int offset, int count, Promise<CollectionResource> promise) {
         //
         // HINT: This method gets executed on a worker thread!
         //
@@ -97,7 +97,7 @@ public class FileSystemDirLister {
                 collection.items.add(resource);
             });
         } catch (IOException e) {
-            future.fail(e);
+            promise.fail(e);
             return;
         }
         Collections.sort(collection.items);
@@ -109,10 +109,10 @@ public class FileSystemDirLister {
         // Don't know exactly what we do here. But it seems we evaluate 'start' of a range request.
         if (offset > -1) {
             if (offset >= collection.items.size() || (offset + n) >= collection.items.size() || (offset == 0 && n == -1)) {
-                future.complete(collection);
+                promise.complete(collection);
             } else {
                 collection.items = collection.items.subList(offset, offset + n);
-                future.complete(collection);
+                promise.complete(collection);
             }
         } else {
             // TODO: Resolve future

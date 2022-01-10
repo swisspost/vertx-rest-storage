@@ -1,11 +1,15 @@
 package org.swisspush.reststorage.mocks;
 
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.Cookie;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerResponse;
+
+import java.util.Set;
 
 
 /**
@@ -29,8 +33,13 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
-    public HttpServerResponse write(Buffer data) {
-        throw new UnsupportedOperationException(msg);
+    public Future<Void> write(Buffer data) {
+        return null;
+    }
+
+    @Override
+    public void write(Buffer data, Handler<AsyncResult<Void>> handler) {
+
     }
 
     @Override
@@ -139,12 +148,22 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
-    public HttpServerResponse write(String chunk, String enc) {
+    public Future<Void> write(String chunk, String enc) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public HttpServerResponse write(String chunk) {
+    public void write(String chunk, String enc, Handler<AsyncResult<Void>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<Void> write(String chunk) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void write(String chunk, Handler<AsyncResult<Void>> handler) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -154,27 +173,47 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
-    public void end(String chunk) {
+    public Future<Void> end(String chunk) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public void end(String chunk, String enc) {
+    public void end(String chunk, Handler<AsyncResult<Void>> handler) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public void end(Buffer chunk) {
+    public Future<Void> end(String chunk, String enc) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public void end() {
+    public void end(String chunk, String enc, Handler<AsyncResult<Void>> handler) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public HttpServerResponse sendFile(String filename, long offset, long length) {
+    public Future<Void> end(Buffer chunk) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void end(Buffer chunk, Handler<AsyncResult<Void>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<Void> end() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void end(Handler<AsyncResult<Void>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<Void> sendFile(String filename, long offset, long length) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -204,12 +243,12 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
-    public HttpServerResponse headersEndHandler( Handler<Void> handler) {
+    public HttpServerResponse headersEndHandler(Handler<Void> handler) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public HttpServerResponse bodyEndHandler( Handler<Void> handler) {
+    public HttpServerResponse bodyEndHandler(Handler<Void> handler) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -244,12 +283,37 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
-    public void reset(long code) {
-        throw new UnsupportedOperationException(msg);
+    public Future<HttpServerResponse> push(HttpMethod method, String host, String path, MultiMap headers) {
+        return null;
+    }
+
+    @Override
+    public boolean reset(long code) {
+        return false;
     }
 
     @Override
     public HttpServerResponse writeCustomFrame(int type, int flags, Buffer payload) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public HttpServerResponse addCookie(Cookie cookie) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Cookie removeCookie(String name, boolean invalidate) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Set<Cookie> removeCookies(String name, boolean invalidate) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Cookie removeCookie(String name, String domain, String path, boolean invalidate) {
         throw new UnsupportedOperationException(msg);
     }
 }

@@ -22,16 +22,13 @@ public class LoggingFileReadStream implements ReadStream {
     private long writtenBytes = 0;
 
     /**
-     * @param expectedSize
-     *      Actual file size which is expected to be streamed through that stream
-     *      in bytes.
-     * @param path
-     *      Token printed alongside the logs so when reading logs, we can see which
-     *      log belongs to which file. A possible candidate is to use the file path
-     *      but it theoretically can be anything  which  helps  you  to  find  logs
-     *      related to your observed file.
-     * @param delegate
-     *      The file (or stream) we wanna observe.
+     * @param expectedSize Actual file size which is expected to be streamed through that stream
+     *                     in bytes.
+     * @param path         Token printed alongside the logs so when reading logs, we can see which
+     *                     log belongs to which file. A possible candidate is to use the file path
+     *                     but it theoretically can be anything  which  helps  you  to  find  logs
+     *                     related to your observed file.
+     * @param delegate     The file (or stream) we wanna observe.
      */
     LoggingFileReadStream(long expectedSize, String path, AsyncFile delegate) {
         this.expectedSize = expectedSize;
@@ -44,7 +41,7 @@ public class LoggingFileReadStream implements ReadStream {
         logger.trace("exceptionHandler registered for reading '{}'", path);
         delegate.exceptionHandler(ex -> {
             logger.debug("Got an exception at offset {} ({} bytes remaining) for '{}': {}",
-                    writtenBytes, expectedSize-writtenBytes, path, ex.getMessage());
+                    writtenBytes, expectedSize - writtenBytes, path, ex.getMessage());
             handler.handle(ex);
         });
         return this;
@@ -79,10 +76,16 @@ public class LoggingFileReadStream implements ReadStream {
     }
 
     @Override
+    public ReadStream fetch(long amount) {
+        logger.debug("fetch amount {}", amount);
+        return delegate.fetch(amount);
+    }
+
+    @Override
     public ReadStream endHandler(Handler endHandler) {
         logger.trace("endHandler registered.");
         delegate.endHandler(aVoid -> {
-            logger.debug("End handler called ({} bytes remaining) for '{}'", expectedSize-writtenBytes, path);
+            logger.debug("End handler called ({} bytes remaining) for '{}'", expectedSize - writtenBytes, path);
             endHandler.handle(aVoid);
         });
         return this;
@@ -91,9 +94,9 @@ public class LoggingFileReadStream implements ReadStream {
     /**
      * Determines if it is worth writing some details to the logs for that chunk.
      */
-    private boolean weShouldLogThatChunk(Buffer buf){
+    private boolean weShouldLogThatChunk(Buffer buf) {
 
-        if( logger.isTraceEnabled() ){
+        if (logger.isTraceEnabled()) {
             // Simply log everything.
             return true;
         }
@@ -102,7 +105,7 @@ public class LoggingFileReadStream implements ReadStream {
         // flood the log too much. Especially  for  large  files  which  would  produce
         // hundreds of lines of output.
 
-        if(writtenBytes <= AsyncFileImpl.DEFAULT_READ_BUFFER_SIZE){
+        if (writtenBytes <= AsyncFileImpl.DEFAULT_READ_BUFFER_SIZE) {
             // We'll log near the beginning.
             return true;
         }

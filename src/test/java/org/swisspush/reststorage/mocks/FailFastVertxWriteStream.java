@@ -1,5 +1,7 @@
 package org.swisspush.reststorage.mocks;
 
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.streams.WriteStream;
 
@@ -22,12 +24,17 @@ public class FailFastVertxWriteStream<T> implements WriteStream<T> {
     }
 
     @Override
-    public WriteStream<T> write(T t) {
+    public Future<Void> write(T data) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public void end() {
+    public void write(T data, Handler<AsyncResult<Void>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void end(Handler<AsyncResult<Void>> handler) {
         throw new UnsupportedOperationException(msg);
     }
 

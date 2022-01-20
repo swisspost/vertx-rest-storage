@@ -71,7 +71,7 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
                 .assertThat().statusCode(BAD_REQUEST)
                 .assertThat().body(equalTo(BAD_REQUEST_PARSE_MSG));
 
-        //Note: in Vertx 4 the wrong data type is acceptable
+        // Note: In Vertx 4 the integer is converted into a string and all 3 resources will be deleted
         delete("/server/resources");
         with().body("{ \"subResources\": [\"res1\", \"res2\", 123] }").put("/server/resources/res1");
         given()

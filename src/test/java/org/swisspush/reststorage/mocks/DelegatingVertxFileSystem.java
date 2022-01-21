@@ -34,7 +34,7 @@ public class DelegatingVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> copy(String s, String s1, CopyOptions options) {
-        return delegate.copy(s, s1);
+        return delegate.copy(s, s1, options);
     }
 
     @Override
@@ -74,7 +74,7 @@ public class DelegatingVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> move(String from, String to, CopyOptions options) {
-        return delegate.move(from, to);
+        return delegate.move(from, to, options);
     }
 
     @Override
@@ -253,8 +253,8 @@ public class DelegatingVertxFileSystem implements FileSystem {
     }
 
     @Override
-    public Future<Void> deleteRecursive(String path, boolean recursive) {
-        return null;
+    public Future<Void> deleteRecursive(String s, boolean b) {
+        return delegate.deleteRecursive(s, b);
     }
 
     @Override

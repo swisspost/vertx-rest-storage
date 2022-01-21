@@ -184,7 +184,7 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
 
     @Override
     public boolean isSessionAccessed() {
-        return false;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -234,12 +234,12 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
 
     @Override
     public int addEndHandler(Handler<AsyncResult<Void>> handler) {
-        return 0;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public boolean removeEndHandler(int i) {
-        return false;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override

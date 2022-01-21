@@ -288,6 +288,10 @@ public class RedisStorage implements Storage {
                 } else {
                     log.info("load lua script for script type: {} logoutput: {}", luaScriptType, logoutput);
                     redisAPI.script(Arrays.asList("load", script), stringAsyncResult -> {
+                        if (stringAsyncResult.failed()) {
+                            log.error("Loading of lua script {} failed", luaScriptType);
+                            return;
+                        }
                         String newSha = stringAsyncResult.result().toString();
                         log.info("got sha from redis for lua script: {}: {}", luaScriptType, newSha);
                         if (!newSha.equals(sha)) {
@@ -736,7 +740,7 @@ public class RedisStorage implements Storage {
 
         @Override
         public void write(Buffer data, Handler<AsyncResult<Void>> handler) {
-
+            write(data).onComplete(handler);
         }
 
         @Override

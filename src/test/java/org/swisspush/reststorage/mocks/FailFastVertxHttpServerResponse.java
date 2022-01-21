@@ -34,12 +34,12 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
 
     @Override
     public Future<Void> write(Buffer data) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public void write(Buffer data, Handler<AsyncResult<Void>> handler) {
-
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -284,12 +284,12 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
 
     @Override
     public Future<HttpServerResponse> push(HttpMethod method, String host, String path, MultiMap headers) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public boolean reset(long code) {
-        return false;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override

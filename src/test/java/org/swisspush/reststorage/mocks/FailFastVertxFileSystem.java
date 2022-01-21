@@ -28,7 +28,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> copy(String from, String to) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -38,7 +38,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> copy(String from, String to, CopyOptions options) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -53,7 +53,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> copyRecursive(String from, String to, boolean recursive) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -68,7 +68,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> move(String from, String to) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -78,7 +78,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> move(String from, String to, CopyOptions options) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -93,7 +93,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> truncate(String path, long len) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -108,7 +108,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> chmod(String path, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -123,7 +123,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> chmodRecursive(String path, String perms, String dirPerms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -138,7 +138,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> chown(String path, String user, String group) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -153,7 +153,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<FileProps> props(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -168,7 +168,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<FileProps> lprops(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -183,7 +183,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> link(String link, String existing) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -198,7 +198,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> symlink(String link, String existing) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -213,7 +213,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> unlink(String link) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -228,7 +228,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<String> readSymlink(String link) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -243,7 +243,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> delete(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -258,7 +258,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> deleteRecursive(String path, boolean recursive) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -273,7 +273,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> mkdir(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -288,7 +288,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> mkdir(String path, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -303,7 +303,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> mkdirs(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -318,7 +318,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> mkdirs(String path, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -333,7 +333,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<List<String>> readDir(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -348,7 +348,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<List<String>> readDir(String path, String filter) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -363,7 +363,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Buffer> readFile(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -378,7 +378,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> writeFile(String path, Buffer data) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -393,7 +393,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<AsyncFile> open(String path, OpenOptions options) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -408,7 +408,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> createFile(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -423,7 +423,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Void> createFile(String path, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -438,7 +438,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<Boolean> exists(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -453,7 +453,7 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public Future<FileSystemProps> fsProps(String path) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -463,91 +463,91 @@ public class FailFastVertxFileSystem implements FileSystem {
 
     @Override
     public FileSystem createTempDirectory(String prefix, Handler<AsyncResult<String>> handler) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public Future<String> createTempDirectory(String prefix) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public String createTempDirectoryBlocking(String prefix) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public FileSystem createTempDirectory(String prefix, String perms, Handler<AsyncResult<String>> handler) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public Future<String> createTempDirectory(String prefix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public String createTempDirectoryBlocking(String prefix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public FileSystem createTempDirectory(String dir, String prefix, String perms, Handler<AsyncResult<String>> handler) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public Future<String> createTempDirectory(String dir, String prefix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public String createTempDirectoryBlocking(String dir, String prefix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public FileSystem createTempFile(String prefix, String suffix, Handler<AsyncResult<String>> handler) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public Future<String> createTempFile(String prefix, String suffix) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public String createTempFileBlocking(String prefix, String suffix) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public FileSystem createTempFile(String prefix, String suffix, String perms, Handler<AsyncResult<String>> handler) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public Future<String> createTempFile(String prefix, String suffix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public String createTempFileBlocking(String prefix, String suffix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public FileSystem createTempFile(String dir, String prefix, String suffix, String perms, Handler<AsyncResult<String>> handler) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public Future<String> createTempFile(String dir, String prefix, String suffix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public String createTempFileBlocking(String dir, String prefix, String suffix, String perms) {
-        return null;
+        throw new UnsupportedOperationException(msg);
     }
 }

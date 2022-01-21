@@ -104,7 +104,7 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequestInternal
 
     @Override
     public long bytesRead() {
-        return 0;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override

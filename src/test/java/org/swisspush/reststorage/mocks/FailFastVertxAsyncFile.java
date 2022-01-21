@@ -135,7 +135,7 @@ public class FailFastVertxAsyncFile implements AsyncFile {
 
     @Override
     public long getReadLength() {
-        return 0;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -145,7 +145,7 @@ public class FailFastVertxAsyncFile implements AsyncFile {
 
     @Override
     public long getWritePos() {
-        return 0;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override
@@ -155,7 +155,7 @@ public class FailFastVertxAsyncFile implements AsyncFile {
 
     @Override
     public long sizeBlocking() {
-        return 0;
+        throw new UnsupportedOperationException(msg);
     }
 
     @Override

@@ -61,10 +61,7 @@ public class RedisStorage implements Storage {
     }
 
     public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisClient redisClient) {
-        this(vertx, config, new RedisClient(vertx,
-                new RedisOptions().setConnectionString("redis://" +
-                        (config.getRedisAuth() == null ? "" : (config.getRedisAuth() + "@")) +
-                        config.getRedisHost() + ":" + config.getRedisPort())), RedisAPI.api(redisClient));
+        this(vertx, config, redisClient, RedisAPI.api(redisClient));
     }
 
 

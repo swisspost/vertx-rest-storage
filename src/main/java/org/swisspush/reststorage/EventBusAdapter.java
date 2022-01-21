@@ -235,7 +235,8 @@ public class EventBusAdapter {
 
                     @Override
                     public Future<Void> write(String chunk, String enc) {
-                        return null;
+                        responsePayload.appendBuffer(Buffer.buffer(chunk, enc));
+                        return Future.succeededFuture();
                     }
 
                     @Override
@@ -258,7 +259,8 @@ public class EventBusAdapter {
 
                     @Override
                     public Future<Void> write(String chunk) {
-                        return null;
+                        responsePayload.appendBuffer(Buffer.buffer(chunk));
+                        return Future.succeededFuture();
                     }
 
                     @Override
@@ -332,7 +334,7 @@ public class EventBusAdapter {
 
                     @Override
                     public Future<Void> sendFile(String filename, long offset, long length) {
-                        return null;
+                        throw new UnsupportedOperationException();
                     }
 
 
@@ -418,7 +420,7 @@ public class EventBusAdapter {
 
                     @Override
                     public boolean reset(long code) {
-                        return false;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override
@@ -453,7 +455,7 @@ public class EventBusAdapter {
 
                     @Override
                     public boolean writeQueueFull() {
-                        return false;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override

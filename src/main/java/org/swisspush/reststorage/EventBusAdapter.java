@@ -265,8 +265,7 @@ public class EventBusAdapter {
 
                     @Override
                     public void write(String chunk, Handler<AsyncResult<Void>> handler) {
-                        responsePayload.appendBuffer(Buffer.buffer(chunk));
-                        handler.handle(Future.succeededFuture());
+                        write(chunk).onComplete(handler);
                     }
 
                     @Override

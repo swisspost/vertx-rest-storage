@@ -752,11 +752,7 @@ public class RedisStorage implements Storage {
 
         @Override
         public void end(Handler<AsyncResult<Void>> handler) {
-            try {
-                bos.close();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            end().onComplete(handler);
         }
     }
 

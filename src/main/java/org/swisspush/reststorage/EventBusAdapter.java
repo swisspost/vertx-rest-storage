@@ -354,7 +354,6 @@ public class EventBusAdapter {
 
                     @Override
                     public void close() {
-                        throw new UnsupportedOperationException();
                     }
 
                     @Override

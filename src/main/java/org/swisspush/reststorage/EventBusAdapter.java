@@ -413,7 +413,7 @@ public class EventBusAdapter {
 
                     @Override
                     public Future<HttpServerResponse> push(HttpMethod method, String host, String path, MultiMap headers) {
-                        return null;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override
@@ -428,22 +428,22 @@ public class EventBusAdapter {
 
                     @Override
                     public HttpServerResponse addCookie(Cookie cookie) {
-                        return null;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override
                     public Cookie removeCookie(String name, boolean invalidate) {
-                        return null;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override
                     public Set<Cookie> removeCookies(String name, boolean invalidate) {
-                        return null;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override
                     public Cookie removeCookie(String name, String domain, String path, boolean invalidate) {
-                        return null;
+                        throw new UnsupportedOperationException();
                     }
 
                     @Override
@@ -517,7 +517,7 @@ public class EventBusAdapter {
 
         @Override
         public SSLSession sslSession() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -527,27 +527,27 @@ public class EventBusAdapter {
 
         @Override
         public String absoluteURI() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Future<Buffer> body() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Future<Void> end() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Future<NetSocket> toNetSocket() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public HttpServerRequest setExpectMultipart(boolean expect) {
-            return this;
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -572,7 +572,7 @@ public class EventBusAdapter {
 
         @Override
         public Future<ServerWebSocket> toWebSocket() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -582,42 +582,42 @@ public class EventBusAdapter {
 
         @Override
         public HttpServerRequest customFrameHandler(Handler<HttpFrame> handler) {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public HttpConnection connection() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public HttpServerRequest streamPriorityHandler(Handler<StreamPriority> handler) {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public DecoderResult decoderResult() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Cookie getCookie(String name) {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Cookie getCookie(String name, String domain, String path) {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Set<Cookie> cookies(String name) {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Set<Cookie> cookies() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -641,7 +641,7 @@ public class EventBusAdapter {
 
         @Override
         public HttpServerRequest fetch(long amount) {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -663,12 +663,12 @@ public class EventBusAdapter {
 
         @Override
         public Context context() {
-            return null;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Object metric() {
-            return null;
+            throw new UnsupportedOperationException();
         }
     }
 

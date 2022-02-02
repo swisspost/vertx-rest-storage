@@ -1,14 +1,16 @@
 package org.swisspush.reststorage;
 
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.buffer.impl.BufferImpl;
-import io.vertx.core.http.CaseInsensitiveHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.http.impl.HttpServerRequestInternal;
+import io.vertx.core.http.impl.headers.HeadersMultiMap;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.streams.WriteStream;
 import io.vertx.ext.unit.Async;
@@ -55,7 +57,7 @@ public class RestStorageHandlerTest {
         storage = mock(Storage.class);
         log = mock(Logger.class);
 
-        request = Mockito.mock(HttpServerRequest.class);
+        request = Mockito.mock(HttpServerRequestInternal.class);
         response = Mockito.mock(HttpServerResponse.class);
 
         when(request.method()).thenReturn(HttpMethod.PUT);
@@ -65,7 +67,7 @@ public class RestStorageHandlerTest {
         when(request.pause()).thenReturn(request);
         when(request.resume()).thenReturn(request);
         when(request.response()).thenReturn(response);
-        when(request.headers()).thenReturn(new CaseInsensitiveHeaders());
+        when(request.headers()).thenReturn(new HeadersMultiMap());
     }
 
     @Test
@@ -74,7 +76,7 @@ public class RestStorageHandlerTest {
         restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
 
         // ARRANGE
-        when(request.headers()).thenReturn(new CaseInsensitiveHeaders().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "not_a_number"));
+        when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "not_a_number"));
 
         // ACT
         restStorageHandler.handle(request);
@@ -111,7 +113,7 @@ public class RestStorageHandlerTest {
         restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
 
         // ARRANGE
-        when(request.headers()).thenReturn(new CaseInsensitiveHeaders().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
+        when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
 
         // ACT
         restStorageHandler.handle(request);
@@ -129,7 +131,7 @@ public class RestStorageHandlerTest {
         restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
 
         // ARRANGE
-        when(request.headers()).thenReturn(new CaseInsensitiveHeaders().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
+        when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
         when(storage.getCurrentMemoryUsage()).thenReturn(Optional.empty());
 
         // ACT
@@ -146,7 +148,7 @@ public class RestStorageHandlerTest {
         restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
 
         // ARRANGE
-        when(request.headers()).thenReturn(new CaseInsensitiveHeaders().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
+        when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
         when(storage.getCurrentMemoryUsage()).thenReturn(Optional.of(75f));
 
         // ACT
@@ -171,34 +173,40 @@ public class RestStorageHandlerTest {
         final Method putResourceMethod;
         {
             putResourceMethod = RestStorageHandler.class.getDeclaredMethod("putResource", RoutingContext.class);
-            putResourceMethod.setAccessible( true );
+            putResourceMethod.setAccessible(true);
         }
 
         // Keep track of state during test
-        final boolean[] errorHandlerGotCalledPtr = new boolean[]{ false };
+        final boolean[] errorHandlerGotCalledPtr = new boolean[]{false};
 
         // Mock victim instance
         final RestStorageHandler victim;
         {
             final Vertx mockedVertx = new FailFastVertx();
-            final Storage mockedStorage = new FailFastRestStorage(){
-                @Override public void put(String path, String etag, boolean merge, long expire, String lockOwner, LockMode lockMode, long lockExpire, boolean storeCompressed, Handler<Resource> handler) {
+            final Storage mockedStorage = new FailFastRestStorage() {
+                @Override
+                public void put(String path, String etag, boolean merge, long expire, String lockOwner, LockMode lockMode, long lockExpire, boolean storeCompressed, Handler<Resource> handler) {
                     final DocumentResource resource = new DocumentResource();
-                    resource.writeStream = new FailFastVertxWriteStream<Buffer>(){
-                        @Override public WriteStream<Buffer> write(Buffer t) {
+                    resource.writeStream = new FailFastVertxWriteStream<Buffer>() {
+                        @Override
+                        public Future<Void> write(Buffer t) {
                             log.debug("Somewhat irrelevant got written to the resource.");
-                            return this;
+                            return Future.succeededFuture();
                         }
-                        @Override public boolean writeQueueFull() { return false; }
+
+                        @Override
+                        public boolean writeQueueFull() {
+                            return false;
+                        }
                     };
                     resource.closeHandler = v -> log.debug("Resource closeHandler got called.");
-                    resource.addErrorHandler( err -> {
-                        synchronized (errorHandlerGotCalledPtr){
+                    resource.addErrorHandler(err -> {
+                        synchronized (errorHandlerGotCalledPtr) {
                             log.debug("Resource errorHandler got called.");
                             errorHandlerGotCalledPtr[0] = true;
                         }
                     });
-                    handler.handle( resource );
+                    handler.handle(resource);
                 }
             };
             final ModuleConfiguration config = new ModuleConfiguration();
@@ -209,56 +217,91 @@ public class RestStorageHandlerTest {
         final RoutingContext routingContext;
         {
             final String requestPath = "/dadadel/gugusel";
-            final MultiMap headers = new CaseInsensitiveHeaders();
-            headers.set( "Content-Length" , "1000" );
-            final HttpServerResponse response = new FailFastVertxHttpServerResponse(){
-                @Override public HttpServerResponse setStatusCode(int statusCode) {
-                    log.debug( "Response status code got set to {}", statusCode);
-                    return this;
-                }
-                @Override public HttpServerResponse setStatusMessage(String statusMessage) {
-                    log.debug( "Response status message got set to '{}'.", statusMessage);
+            final MultiMap headers = new HeadersMultiMap();
+            headers.set("Content-Length", "1000");
+            final HttpServerResponse response = new FailFastVertxHttpServerResponse() {
+                @Override
+                public HttpServerResponse setStatusCode(int statusCode) {
+                    log.debug("Response status code got set to {}", statusCode);
                     return this;
                 }
 
                 @Override
-                public void end(String chunk) {
+                public HttpServerResponse setStatusMessage(String statusMessage) {
+                    log.debug("Response status message got set to '{}'.", statusMessage);
+                    return this;
+                }
+
+                @Override
+                public Future<Void> end(String chunk) {
+                    return Future.succeededFuture();
                 }
             };
-            final HttpServerRequest request = new FailFastVertxHttpServerRequest(){
-                @Override public HttpServerRequest pause() {
-                    log.debug( "Request paused" );
+            final HttpServerRequest request = new FailFastVertxHttpServerRequest() {
+                @Override
+                public HttpServerRequest pause() {
+                    log.debug("Request paused");
                     return this;
                 }
-                @Override public String path() { return requestPath; }
-                @Override public MultiMap headers() { return headers; }
-                @Override public String query() { return ""; }
-                @Override public HttpServerRequest resume() { log.debug("Request resumed."); return this; }
-                @Override public HttpServerRequest handler(Handler<Buffer> handler) {
+
+                @Override
+                public String path() {
+                    return requestPath;
+                }
+
+                @Override
+                public MultiMap headers() {
+                    return headers;
+                }
+
+                @Override
+                public String query() {
+                    return "";
+                }
+
+                @Override
+                public HttpServerRequest resume() {
+                    log.debug("Request resumed.");
+                    return this;
+                }
+
+                @Override
+                public HttpServerRequest handler(Handler<Buffer> handler) {
                     final Buffer tooShortBuffer = new BufferImpl();
-                    tooShortBuffer.setBytes( 0 , ("This messages intent is to be shorter than specified in header.").getBytes());
-                    handler.handle( tooShortBuffer );
+                    tooShortBuffer.setBytes(0, ("This messages intent is to be shorter than specified in header.").getBytes());
+                    handler.handle(tooShortBuffer);
                     return this;
                 }
-                @Override public HttpServerRequest endHandler(Handler<Void> endHandler) {
+
+                @Override
+                public HttpServerRequest endHandler(Handler<Void> endHandler) {
                     // Ignore this because this request MUST NEVER END!
                     return this;
                 }
-                @Override public HttpServerRequest exceptionHandler(Handler<Throwable> handler) {
+
+                @Override
+                public HttpServerRequest exceptionHandler(Handler<Throwable> handler) {
                     handler.handle(new Exception("TODO-what-to-do-here"));
                     return this;
                 }
             };
-            routingContext = new FailFastVertxWebRoutingContext(){
-                @Override public HttpServerRequest request() { return request; }
-                @Override public HttpServerResponse response() { return response; }
+            routingContext = new FailFastVertxWebRoutingContext() {
+                @Override
+                public HttpServerRequest request() {
+                    return request;
+                }
+
+                @Override
+                public HttpServerResponse response() {
+                    return response;
+                }
             };
         }
 
         // Trigger work
         putResourceMethod.invoke(victim, routingContext);
 
-        synchronized (errorHandlerGotCalledPtr){
+        synchronized (errorHandlerGotCalledPtr) {
             testContext.assertTrue(errorHandlerGotCalledPtr[0], "Victim failed to call error handler.");
         }
     }
@@ -286,13 +329,13 @@ public class RestStorageHandlerTest {
         }
 
         // Setup request we will trigger.
-        final HttpServerRequest request;
+        final HttpServerRequestInternal request;
         {
             final HttpServerResponse response = new FailFastVertxHttpServerResponse() {
                 private String statusMessage;
                 private boolean ended = false;
                 private Integer statusCode = null;
-                private final MultiMap headers = new CaseInsensitiveHeaders();
+                private final MultiMap headers = new HeadersMultiMap();
 
                 @Override
                 public boolean ended() {
@@ -322,16 +365,17 @@ public class RestStorageHandlerTest {
                 }
 
                 @Override
-                public void end() {
+                public Future<Void> end() {
                     testContext.assertFalse(ended);
                     ended = true;
                     testContext.assertEquals(405, statusCode);
                     // Defer to ensure handler really is done (and doesn't do any crap after he called end).
                     vertx.setTimer(20, (delay) -> async.complete());
+                    return Future.succeededFuture();
                 }
             };
             request = new FailFastVertxHttpServerRequest() {
-                private final CaseInsensitiveHeaders headers = new CaseInsensitiveHeaders();
+                private final HeadersMultiMap headers = new HeadersMultiMap();
 
                 @Override
                 public HttpMethod method() {

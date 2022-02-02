@@ -77,7 +77,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
 
     @Override
     public void handle(HttpServerRequest request) {
-        router.accept(request);
+        router.handle(request);
     }
 
     ////////////////////////////

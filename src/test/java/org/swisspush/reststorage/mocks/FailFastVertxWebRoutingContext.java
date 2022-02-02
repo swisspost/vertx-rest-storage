@@ -1,9 +1,11 @@
 package org.swisspush.reststorage.mocks;
 
+import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.Cookie;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
@@ -12,6 +14,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.auth.User;
 import io.vertx.ext.web.*;
 
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,12 +58,22 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
+    public void fail(int i, Throwable throwable) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public RoutingContext put(String s, Object o) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
     public <T> T get(String s) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public <T> T get(String s, T t) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -95,6 +108,11 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
+    public String normalizedPath() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public Cookie getCookie(String s) {
         throw new UnsupportedOperationException(msg);
     }
@@ -105,7 +123,7 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
-    public Cookie removeCookie(String s) {
+    public Cookie removeCookie(String s, boolean b) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -115,7 +133,7 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
-    public Set<Cookie> cookies() {
+    public Map<String, Cookie> cookieMap() {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -126,6 +144,16 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
 
     @Override
     public String getBodyAsString(String s) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public JsonObject getBodyAsJson(int i) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public JsonArray getBodyAsJsonArray(int i) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -151,6 +179,11 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
 
     @Override
     public Session session() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public boolean isSessionAccessed() {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -200,6 +233,16 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
+    public int addEndHandler(Handler<AsyncResult<Void>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public boolean removeEndHandler(int i) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public boolean failed() {
         throw new UnsupportedOperationException(msg);
     }
@@ -235,11 +278,6 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
-    public List<Locale> acceptableLocales() {
-        throw new UnsupportedOperationException(msg);
-    }
-
-    @Override
     public Map<String, String> pathParams() {
         throw new UnsupportedOperationException(msg);
     }
@@ -251,6 +289,11 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
 
     @Override
     public MultiMap queryParams() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public MultiMap queryParams(Charset charset) {
         throw new UnsupportedOperationException(msg);
     }
 

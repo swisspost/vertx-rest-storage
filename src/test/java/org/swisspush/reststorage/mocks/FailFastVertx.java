@@ -20,6 +20,7 @@ import io.vertx.core.shareddata.SharedData;
 import io.vertx.core.spi.VerticleFactory;
 
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 
@@ -30,7 +31,7 @@ public class FailFastVertx implements Vertx {
     public FailFastVertx() {
         this("Override this to provide your behaviour.");
     }
-    
+
     public FailFastVertx(String msg) {
         this.msg = msg;
     }
@@ -151,9 +152,10 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public void close() {
+    public Future<Void> close() {
         throw new UnsupportedOperationException(msg);
     }
+
 
     @Override
     public void close(Handler<AsyncResult<Void>> handler) {
@@ -161,9 +163,10 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public void deployVerticle(Verticle verticle) {
+    public Future<String> deployVerticle(Verticle verticle) {
         throw new UnsupportedOperationException(msg);
     }
+
 
     @Override
     public void deployVerticle(Verticle verticle, Handler<AsyncResult<String>> handler) {
@@ -171,19 +174,20 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public void deployVerticle(Verticle verticle, DeploymentOptions deploymentOptions) {
+    public Future<String> deployVerticle(Verticle verticle, DeploymentOptions options) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public void deployVerticle(Class<? extends Verticle> aClass, DeploymentOptions deploymentOptions) {
+    public Future<String> deployVerticle(Class<? extends Verticle> verticleClass, DeploymentOptions options) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public void deployVerticle(Supplier<Verticle> supplier, DeploymentOptions deploymentOptions) {
+    public Future<String> deployVerticle(Supplier<Verticle> verticleSupplier, DeploymentOptions options) {
         throw new UnsupportedOperationException(msg);
     }
+
 
     @Override
     public void deployVerticle(Verticle verticle, DeploymentOptions deploymentOptions, Handler<AsyncResult<String>> handler) {
@@ -201,7 +205,7 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public void deployVerticle(String s) {
+    public Future<String> deployVerticle(String name) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -211,9 +215,10 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public void deployVerticle(String s, DeploymentOptions deploymentOptions) {
+    public Future<String> deployVerticle(String name, DeploymentOptions options) {
         throw new UnsupportedOperationException(msg);
     }
+
 
     @Override
     public void deployVerticle(String s, DeploymentOptions deploymentOptions, Handler<AsyncResult<String>> handler) {
@@ -221,7 +226,7 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public void undeploy(String s) {
+    public Future<Void> undeploy(String deploymentID) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -256,14 +261,25 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
-    public <T> void executeBlocking(Handler<Future<T>> handler, boolean b, Handler<AsyncResult<T>> handler1) {
+    public <T> void executeBlocking(Handler<Promise<T>> blockingCodeHandler, boolean ordered, Handler<AsyncResult<T>> asyncResultHandler) {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public <T> void executeBlocking(Handler<Future<T>> handler, Handler<AsyncResult<T>> handler1) {
+    public <T> void executeBlocking(Handler<Promise<T>> blockingCodeHandler, Handler<AsyncResult<T>> asyncResultHandler) {
         throw new UnsupportedOperationException(msg);
     }
+
+    @Override
+    public <T> Future<T> executeBlocking(Handler<Promise<T>> blockingCodeHandler, boolean ordered) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public <T> Future<T> executeBlocking(Handler<Promise<T>> blockingCodeHandler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
 
     @Override
     public EventLoopGroup nettyEventLoopGroup() {
@@ -286,12 +302,17 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
+    public WorkerExecutor createSharedWorkerExecutor(String name, int poolSize, long maxExecuteTime, TimeUnit maxExecuteTimeUnit) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public boolean isNativeTransportEnabled() {
         throw new UnsupportedOperationException(msg);
     }
 
     @Override
-    public Vertx exceptionHandler( Handler<Throwable> handler) {
+    public Vertx exceptionHandler(Handler<Throwable> handler) {
         throw new UnsupportedOperationException(msg);
     }
 

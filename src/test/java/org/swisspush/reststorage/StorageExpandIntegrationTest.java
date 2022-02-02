@@ -29,6 +29,7 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
     final String IF_NONE_MATCH_HEADER = "if-none-match";
     final String POST_STORAGE_EXP = "/server/resources?storageExpand=true";
     final int BAD_REQUEST = 400;
+    final int HTTP_OK = 200;
     final String BAD_REQUEST_PARSE_MSG = "Bad Request: Unable to parse body of storageExpand POST request";
     final String COMPRESS_HEADER = "x-stored-compressed";
 
@@ -70,13 +71,16 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
                 .assertThat().statusCode(BAD_REQUEST)
                 .assertThat().body(equalTo(BAD_REQUEST_PARSE_MSG));
 
+        // Note: In Vertx 4 the integer is converted into a string and all 3 resources will be deleted
+        delete("/server/resources");
+        with().body("{ \"subResources\": [\"res1\", \"res2\", 123] }").put("/server/resources/res1");
         given()
                 .body("{ \"subResources\": [\"res1\", \"res2\", 123] }")
                 .when()
                 .post(POST_STORAGE_EXP)
                 .then()
-                .assertThat().statusCode(BAD_REQUEST)
-                .assertThat().body(equalTo(BAD_REQUEST_PARSE_MSG));
+                .assertThat().statusCode(HTTP_OK)
+                .assertThat().body(equalTo("{\"res1\":{\"subResources\":[\"res1\",\"res2\",123]}}"));
 
         given()
                 .body("\"foo\": \"bar1\"")

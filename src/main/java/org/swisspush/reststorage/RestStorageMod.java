@@ -3,6 +3,7 @@ package org.swisspush.reststorage;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.logging.Logger;
@@ -14,7 +15,7 @@ public class RestStorageMod extends AbstractVerticle {
     private Logger log = LoggerFactory.getLogger(RestStorageMod.class);
 
     @Override
-    public void start(Future<Void> fut) {
+    public void start(Promise<Void> promise) {
         ModuleConfiguration modConfig = ModuleConfiguration.fromJsonObject(config());
         log.info("Starting RestStorageMod with configuration: {}", modConfig);
         Storage storage;
@@ -37,9 +38,9 @@ public class RestStorageMod extends AbstractVerticle {
         vertx.createHttpServer(options).requestHandler(handler).listen(modConfig.getPort(), result -> {
             if(result.succeeded()){
                 new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
-                fut.complete();
+                promise.complete();
             } else {
-                fut.fail(result.cause());
+                promise.fail(result.cause());
             }
         });
     }

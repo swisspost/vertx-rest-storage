@@ -13,7 +13,6 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
 
-import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
 import java.util.List;
@@ -32,15 +31,15 @@ public class EventBusAdapter {
     }
 
     private class MappedHttpServerRequest implements HttpServerRequestInternal {
-        private Vertx vertx;
-        private Buffer requestPayload;
-        private HttpMethod method;
-        private String uri;
+        private final Vertx vertx;
+        private final Buffer requestPayload;
+        private final HttpMethod method;
+        private final String uri;
+        private final MultiMap requestHeaders;
+        private final Message<Buffer> message;
         private String path;
         private String query;
         private MultiMap params;
-        private MultiMap requestHeaders;
-        private Message<Buffer> message;
         private Handler<Buffer> dataHandler;
         private Handler<Void> endHandler;
         private HttpServerResponse response;
@@ -130,8 +129,8 @@ public class EventBusAdapter {
 
                     private int statusCode;
                     private String statusMessage;
-                    private MultiMap responseHeaders = new HeadersMultiMap();
-                    private Buffer responsePayload = Buffer.buffer();
+                    private final MultiMap responseHeaders = new HeadersMultiMap();
+                    private final Buffer responsePayload = Buffer.buffer();
 
                     @Override
                     public int getStatusCode() {
@@ -453,7 +452,7 @@ public class EventBusAdapter {
 
                     @Override
                     public boolean writeQueueFull() {
-                        throw new UnsupportedOperationException();
+                        return false;
                     }
 
                     @Override
@@ -521,18 +520,20 @@ public class EventBusAdapter {
         }
 
         @Override
-        public X509Certificate[] peerCertificateChain() throws SSLPeerUnverifiedException {
+        public X509Certificate[] peerCertificateChain() {
             return new X509Certificate[0];
         }
 
         @Override
         public String absoluteURI() {
-            throw new UnsupportedOperationException();
+            return this.uri;
         }
 
         @Override
         public Future<Buffer> body() {
-            throw new UnsupportedOperationException();
+            Promise<Buffer> promise = Promise.promise();
+            this.handler(promise::complete);
+            return promise.future();
         }
 
         @Override
@@ -654,8 +655,8 @@ public class EventBusAdapter {
             if (requestPayload != null) {
                 dataHandler = bufferHandler;
                 vertx.runOnContext(aVoid -> {
-                    dataHandler.handle(requestPayload);
-                    endHandler.handle(null);
+                    if (dataHandler != null) dataHandler.handle(requestPayload);
+                    if (endHandler != null) endHandler.handle(null);
                 });
             }
             return this;

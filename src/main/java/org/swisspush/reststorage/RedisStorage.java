@@ -56,7 +56,9 @@ public class RedisStorage implements Storage {
     public RedisStorage(Vertx vertx, ModuleConfiguration config) {
         this(vertx, config, new RedisClient(vertx,
                 new RedisOptions().setConnectionString("redis://" +
-                        config.getRedisHost() + ":" + config.getRedisPort()).setPassword((config.getRedisAuth() == null ? "" : config.getRedisAuth())).setMaxPoolSize(512)));
+                        config.getRedisHost() + ":" + config.getRedisPort())
+                        .setPassword((config.getRedisAuth() == null ? "" : config.getRedisAuth()))
+                        .setMaxPoolSize(config.getMaxRedisConnectionPoolSize())));
     }
 
     public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisClient redisClient) {

@@ -35,6 +35,7 @@ public class ModuleConfiguration {
     private boolean            rejectStorageWriteOnLowMemory = false                     ;
     private long               freeMemoryCheckIntervalMs     = 60_000L                   ;
     private boolean            return200onDeleteNonExisting  = false                     ;
+    private int                maxRedisConnectionPoolSize    = 24                        ;
 
     public ModuleConfiguration root(String root) {
         this.root = root;
@@ -136,12 +137,15 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration maxRedisConnectionPoolSize(int maxRedisConnectionPoolSize) {
+        this.maxRedisConnectionPoolSize = maxRedisConnectionPoolSize;
+        return this;
+    }
+
     public ModuleConfiguration return200onDeleteNonExisting(boolean deleteNonExistingReturn200) {
         this.return200onDeleteNonExisting = deleteNonExistingReturn200;
         return this;
     }
-
-
 
     public String getRoot() {
         return root;
@@ -213,6 +217,10 @@ public class ModuleConfiguration {
 
     public boolean isReturn200onDeleteNonExisting() {
         return return200onDeleteNonExisting;
+    }
+
+    public int getMaxRedisConnectionPoolSize() {
+        return maxRedisConnectionPoolSize;
     }
 
     public JsonObject asJsonObject(){

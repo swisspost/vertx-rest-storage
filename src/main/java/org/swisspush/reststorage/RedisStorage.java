@@ -46,7 +46,7 @@ public class RedisStorage implements Storage {
     private long cleanupResourcesAmount;
     private String redisLockPrefix;
     private Vertx vertx;
-    private RedisClient redisClient;
+
     private RedisAPI redisAPI;
     private Map<LuaScript, LuaScriptState> luaScripts = new HashMap<>();
     private DecimalFormat decimalFormat;
@@ -56,8 +56,7 @@ public class RedisStorage implements Storage {
     public RedisStorage(Vertx vertx, ModuleConfiguration config) {
         this(vertx, config, new RedisClient(vertx,
                 new RedisOptions().setConnectionString("redis://" +
-                        (config.getRedisAuth() == null ? "" : (config.getRedisAuth() + "@")) +
-                        config.getRedisHost() + ":" + config.getRedisPort())));
+                        config.getRedisHost() + ":" + config.getRedisPort()).setPassword((config.getRedisAuth() == null ? "" : config.getRedisAuth())).setMaxPoolSize(512)));
     }
 
     public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisClient redisClient) {
@@ -75,7 +74,6 @@ public class RedisStorage implements Storage {
         this.redisLockPrefix = config.getLockPrefix();
 
         this.vertx = vertx;
-        this.redisClient = redisClient;
         this.redisAPI = redisAPI;
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);

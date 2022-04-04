@@ -3,12 +3,15 @@ package org.swisspush.reststorage;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.buffer.impl.BufferImpl;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.Response;
 import io.vertx.redis.client.impl.RedisClient;
+import io.vertx.redis.client.impl.types.BulkType;
 import io.vertx.redis.client.impl.types.MultiType;
 import io.vertx.redis.client.impl.types.NumberType;
 import io.vertx.redis.client.impl.types.SimpleStringType;
@@ -74,10 +77,10 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
+                    MultiType response = MultiType.create(1, true);
                     response.add(SimpleStringType.create("data"));
 
-                    MultiType data1 = MultiType.create(1,true);
+                    MultiType data1 = MultiType.create(1, true);
                     data1.add(SimpleStringType.create("some_property"));
                     data1.add(SimpleStringType.create("some_value"));
                     response.add(data1);
@@ -102,10 +105,10 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
+                    MultiType response = MultiType.create(1, true);
                     response.add(SimpleStringType.create("memory"));
 
-                    MultiType data1 = MultiType.create(1,true);
+                    MultiType data1 = MultiType.create(1, true);
                     data1.add(SimpleStringType.create("some_property"));
                     data1.add(SimpleStringType.create("some_value"));
                     response.add(data1);
@@ -130,10 +133,10 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
+                    MultiType response = MultiType.create(1, true);
                     response.add(SimpleStringType.create("memory"));
 
-                    MultiType data1 = MultiType.create(1,true);
+                    MultiType data1 = MultiType.create(1, true);
                     data1.add(SimpleStringType.create("total_system_memory"));
                     data1.add(SimpleStringType.create("0"));
                     response.add(data1);
@@ -158,10 +161,10 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
+                    MultiType response = MultiType.create(1, true);
                     response.add(SimpleStringType.create("memory"));
 
-                    MultiType data1 = MultiType.create(1,true);
+                    MultiType data1 = MultiType.create(1, true);
                     data1.add(SimpleStringType.create("total_system_memory"));
                     data1.add(NumberType.create(12345));
                     response.add(data1);
@@ -186,10 +189,10 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(2,true);
+                    MultiType response = MultiType.create(2, true);
                     response.add(SimpleStringType.create("memory"));
 
-                    MultiType data1 = MultiType.create(2,true);
+                    MultiType data1 = MultiType.create(2, true);
                     data1.add(SimpleStringType.create("total_system_memory"));
                     data1.add(SimpleStringType.create("1000"));
 
@@ -217,10 +220,10 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
+                    MultiType response = MultiType.create(1, true);
                     response.add(SimpleStringType.create("memory"));
 
-                    MultiType data1 = MultiType.create(2,true);
+                    MultiType data1 = MultiType.create(2, true);
                     data1.add(SimpleStringType.create("total_system_memory"));
                     data1.add(SimpleStringType.create("12345"));
                     data1.add(SimpleStringType.create("total_system_memory"));
@@ -247,16 +250,11 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
-                    response.add(SimpleStringType.create("memory"));
-
-                    MultiType data1 = MultiType.create(2,true);
-                    data1.add(SimpleStringType.create("total_system_memory"));
-                    data1.add(SimpleStringType.create("100"));
-                    data1.add(SimpleStringType.create("used_memory"));
-                    data1.add(SimpleStringType.create("75"));
-                    response.add(data1);
-                    return response;
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:75");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:100");
+                    return BulkType.create(buffer, false);
                 }
             });
             return null;
@@ -273,16 +271,11 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
-                    response.add(SimpleStringType.create("memory"));
-
-                    MultiType data1 = MultiType.create(2,true);
-                    data1.add(SimpleStringType.create("total_system_memory"));
-                    data1.add(SimpleStringType.create("100"));
-                    data1.add(SimpleStringType.create("used_memory"));
-                    data1.add(SimpleStringType.create("0"));
-                    response.add(data1);
-                    return response;
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:0");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:100");
+                    return BulkType.create(buffer, false);
                 }
             });
             return null;
@@ -299,16 +292,11 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
-                    response.add(SimpleStringType.create("memory"));
-
-                    MultiType data1 = MultiType.create(2,true);
-                    data1.add(SimpleStringType.create("total_system_memory"));
-                    data1.add(SimpleStringType.create("100"));
-                    data1.add(SimpleStringType.create("used_memory"));
-                    data1.add(SimpleStringType.create("150"));
-                    response.add(data1);
-                    return response;
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:100");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:100");
+                    return BulkType.create(buffer, false);
                 }
             });
             return null;
@@ -325,16 +313,11 @@ public class RedisStorageTest {
             ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
                 @Override
                 public Response result() {
-                    MultiType response = MultiType.create(1,true);
-                    response.add(SimpleStringType.create("memory"));
-
-                    MultiType data1 = MultiType.create(2,true);
-                    data1.add(SimpleStringType.create("total_system_memory"));
-                    data1.add(SimpleStringType.create("100"));
-                    data1.add(SimpleStringType.create("used_memory"));
-                    data1.add(SimpleStringType.create("-20"));
-                    response.add(data1);
-                    return response;
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:-20");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:100");
+                    return BulkType.create(buffer, false);
                 }
             });
             return null;

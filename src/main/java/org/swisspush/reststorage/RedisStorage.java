@@ -56,7 +56,7 @@ public class RedisStorage implements Storage {
     public RedisStorage(Vertx vertx, ModuleConfiguration config) {
         this(vertx, config, new RedisClient(vertx,
                 new RedisOptions().setConnectionString("redis://" +
-                        config.getRedisHost() + ":" + config.getRedisPort())
+                                config.getRedisHost() + ":" + config.getRedisPort())
                         .setPassword((config.getRedisAuth() == null ? "" : config.getRedisAuth()))
                         .setMaxPoolSize(config.getMaxRedisConnectionPoolSize())));
     }
@@ -120,31 +120,43 @@ public class RedisStorage implements Storage {
                 return;
             }
 
-            Response memory = memoryInfo.result().get("memory");
-            if (memory == null) {
-                log.warn("No 'memory' section received from redis. Unable to calculate the current memory usage");
-                promise.complete(Optional.empty());
-                return;
-            }
-
-            Long totalSystemMemory;
+            long totalSystemMemory;
             try {
-                totalSystemMemory = memory.get("total_system_memory").toLong();
-                if (totalSystemMemory == 0) {
+                Optional<String> totalSystemMemoryOpt = memoryInfo.result().toString()
+                        .lines()
+                        .filter(source -> source.startsWith("total_system_memory:"))
+                        .findAny();
+                if (totalSystemMemoryOpt.isEmpty()) {
+                    log.warn("No 'total_system_memory' section received from redis. Unable to calculate the current memory usage");
+                    promise.complete(Optional.empty());
+                    return;
+                }
+                totalSystemMemory = Long.parseLong(totalSystemMemoryOpt.get().split(":")[1]);
+                if (totalSystemMemory == 0L) {
                     log.warn("'total_system_memory' value 0 received from redis. Unable to calculate the current memory usage");
                     promise.complete(Optional.empty());
                     return;
                 }
-            } catch (Exception ex) {
+
+            } catch (NumberFormatException ex) {
                 logPropertyWarning("total_system_memory", ex);
                 promise.complete(Optional.empty());
                 return;
             }
 
-            Long usedMemory;
+            long usedMemory;
             try {
-                usedMemory = memory.get("used_memory").toLong();
-            } catch (Exception ex) {
+                Optional<String> usedMemoryOpt = memoryInfo.result().toString()
+                        .lines()
+                        .filter(source -> source.startsWith("used_memory:"))
+                        .findAny();
+                if (usedMemoryOpt.isEmpty()) {
+                    log.warn("No 'used_memory' section received from redis. Unable to calculate the current memory usage");
+                    promise.complete(Optional.empty());
+                    return;
+                }
+                usedMemory = Long.parseLong(usedMemoryOpt.get().split(":")[1]);
+            } catch (NumberFormatException ex) {
                 logPropertyWarning("used_memory", ex);
                 promise.complete(Optional.empty());
                 return;

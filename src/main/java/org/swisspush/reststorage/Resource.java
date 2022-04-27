@@ -1,8 +1,8 @@
 package org.swisspush.reststorage;
 
 import io.vertx.core.Handler;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,8 +54,8 @@ public class Resource implements Comparable<Resource>{
         if (errorHandler instanceof EventEmitter) {
             ((EventEmitter) errorHandler).addHandler(handler);
         } else {
-            errorHandler = new EventEmitter<Throwable>() {{
-                if(errorHandler != null) addHandler(errorHandler);
+            errorHandler = new EventEmitter<>() {{
+                if (errorHandler != null) addHandler(errorHandler);
                 addHandler(handler);
             }};
         }

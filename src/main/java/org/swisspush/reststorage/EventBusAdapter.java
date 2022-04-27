@@ -30,7 +30,7 @@ public class EventBusAdapter {
         vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> requestHandler.handle(new MappedHttpServerRequest(vertx, message)));
     }
 
-    private class MappedHttpServerRequest implements HttpServerRequestInternal {
+    private static class MappedHttpServerRequest implements HttpServerRequestInternal {
         private final Vertx vertx;
         private final Buffer requestPayload;
         private final HttpMethod method;

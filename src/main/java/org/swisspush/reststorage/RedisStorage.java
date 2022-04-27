@@ -5,17 +5,16 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.streams.ReadStream;
 import io.vertx.core.streams.WriteStream;
 import io.vertx.redis.client.RedisAPI;
-import io.vertx.redis.client.RedisOptions;
 import io.vertx.redis.client.Response;
 import io.vertx.redis.client.impl.RedisClient;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.text.StrSubstitutor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.util.GZIPUtil;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
@@ -53,20 +52,11 @@ public class RedisStorage implements Storage {
 
     private Optional<Float> currentMemoryUsageOptional = Optional.empty();
 
-    public RedisStorage(Vertx vertx, ModuleConfiguration config) {
-        this(vertx, config, new RedisClient(vertx,
-                new RedisOptions().setConnectionString("redis://" +
-                                config.getRedisHost() + ":" + config.getRedisPort())
-                        .setPassword((config.getRedisAuth() == null ? "" : config.getRedisAuth()))
-                        .setMaxPoolSize(config.getMaxRedisConnectionPoolSize())));
-    }
-
     public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisClient redisClient) {
-        this(vertx, config, redisClient, RedisAPI.api(redisClient));
+        this(vertx, config, RedisAPI.api(redisClient));
     }
 
-
-    public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisClient redisClient, RedisAPI redisAPI) {
+    public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisAPI redisAPI) {
         this.expirableSet = config.getExpirablePrefix();
         this.redisResourcesPrefix = config.getResourcesPrefix();
         this.redisCollectionsPrefix = config.getCollectionsPrefix();
@@ -350,7 +340,7 @@ public class RedisStorage implements Storage {
     /**
      * A dummy that can be passed if no RedisCommand should be executed.
      */
-    private class RedisCommandDoNothing implements RedisCommand {
+    private static class RedisCommandDoNothing implements RedisCommand {
 
         @Override
         public void exec(int executionCounter) {
@@ -708,7 +698,7 @@ public class RedisStorage implements Storage {
         }
     }
 
-    class ByteArrayWriteStream implements WriteStream<Buffer> {
+    static class ByteArrayWriteStream implements WriteStream<Buffer> {
 
         private ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
@@ -800,7 +790,7 @@ public class RedisStorage implements Storage {
                 expireInMillis = String.valueOf(System.currentTimeMillis() + (expire * 1000));
             }
 
-            if (Long.valueOf(expireInMillis) > Long.valueOf(MAX_EXPIRE_IN_MILLIS)) {
+            if (Long.parseLong(expireInMillis) > Long.parseLong(MAX_EXPIRE_IN_MILLIS)) {
                 // #76 reset to the defined max value
                 expireInMillis = MAX_EXPIRE_IN_MILLIS;
             }

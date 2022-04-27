@@ -10,7 +10,6 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.Response;
-import io.vertx.redis.client.impl.RedisClient;
 import io.vertx.redis.client.impl.types.BulkType;
 import io.vertx.redis.client.impl.types.MultiType;
 import io.vertx.redis.client.impl.types.NumberType;
@@ -36,15 +35,13 @@ import static org.mockito.Mockito.when;
 @RunWith(VertxUnitRunner.class)
 public class RedisStorageTest {
 
-    private RedisClient redisClient;
     private RedisAPI redisAPI;
     private RedisStorage storage;
 
     @Before
     public void setUp(TestContext context) {
-        redisClient = Mockito.mock(RedisClient.class);
         redisAPI = Mockito.mock(RedisAPI.class);
-        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisClient, redisAPI);
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisAPI);
     }
 
 

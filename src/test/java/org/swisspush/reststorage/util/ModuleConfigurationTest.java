@@ -53,7 +53,7 @@ public class ModuleConfigurationTest {
         ModuleConfiguration config = new ModuleConfiguration()
                 .redisHost("anotherhost")
                 .redisPort(1234)
-                .editorConfig(new HashMap<String, String>() {{
+                .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
                 .confirmCollectionDelete(true)
@@ -123,7 +123,7 @@ public class ModuleConfigurationTest {
         ModuleConfiguration config = new ModuleConfiguration()
                 .redisHost("anotherhost")
                 .redisPort(1234)
-                .editorConfig(new HashMap<String, String>() {{
+                .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
                 .confirmCollectionDelete(true)

@@ -11,7 +11,6 @@ import io.vertx.core.http.impl.HttpServerRequestInternal;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
 
-import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
 import java.util.Set;

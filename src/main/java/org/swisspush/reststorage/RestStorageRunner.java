@@ -1,7 +1,7 @@
 package org.swisspush.reststorage;
 
 import io.vertx.core.Vertx;
-import io.vertx.core.logging.LoggerFactory;
+import org.slf4j.LoggerFactory;
 
 /**
  * Created by florian kammermann on 23.05.2016.

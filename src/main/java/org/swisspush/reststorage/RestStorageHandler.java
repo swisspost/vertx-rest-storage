@@ -3,15 +3,14 @@ package org.swisspush.reststorage;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
 import io.vertx.core.streams.Pump;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import org.slf4j.Logger;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 import org.swisspush.reststorage.util.ResourceNameUtil;
@@ -21,8 +20,8 @@ import java.text.DecimalFormat;
 import java.util.*;
 
 import static org.swisspush.reststorage.util.HttpRequestHeader.*;
-import static org.swisspush.reststorage.util.HttpRequestParam.*;
 import static org.swisspush.reststorage.util.HttpRequestParam.getString;
+import static org.swisspush.reststorage.util.HttpRequestParam.*;
 
 public class RestStorageHandler implements Handler<HttpServerRequest> {
 
@@ -127,7 +126,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         String offsetFromUrl = getString(params, OFFSET_PARAMETER);
         String limitFromUrl = getString(params, LIMIT_PARAMETER);
         OffsetLimit offsetLimit = UrlParser.offsetLimit(offsetFromUrl, limitFromUrl);
-        storage.get(path, etag, offsetLimit.offset, offsetLimit.limit, new Handler<Resource>() {
+        storage.get(path, etag, offsetLimit.offset, offsetLimit.limit, new Handler<>() {
             public void handle(Resource resource) {
                 if (log.isTraceEnabled()) {
                     log.trace("RestStorageHandler resource exists: {}", resource.exists);

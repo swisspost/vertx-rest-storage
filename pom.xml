@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.swisspush</groupId>
     <artifactId>rest-storage</artifactId>
-    <version>3.0.4-SNAPSHOT</version>
+    <version>3.0.5-SNAPSHOT</version>
     <name>rest-storage</name>
     <description>
         Persistence for REST resources in the filesystem or a redis database
@@ -43,7 +43,7 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-redis-client</artifactId>
-            <version>${vertx.version}</version>
+            <version>${vertx-redis-client.version}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
@@ -358,6 +358,7 @@
     </profiles>
     <properties>
         <vertx.version>4.2.1</vertx.version>
+        <vertx-redis-client.version>4.3.3</vertx-redis-client.version>
         <slf4j.version>1.7.32</slf4j.version>
         <junit.version>4.12</junit.version>
         <jackson.version>2.13.0</jackson.version>

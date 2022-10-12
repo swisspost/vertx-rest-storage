@@ -41,8 +41,8 @@ jobs:
           source "$HOME/.sdkman/bin/sdkman-init.sh"
           sdk install groovy 3.0.8
           
-          chmod +x ./maybe-release-github.sh
-          ./maybe-release-github.sh
+          chmod +x ./maybe-release.sh
+          ./maybe-release.sh
         env:
           CI_DEPLOY_USERNAME: ${{ secrets.CI_DEPLOY_USERNAME }}
           CI_DEPLOY_PASSWORD: ${{ secrets.CI_DEPLOY_PASSWORD }}

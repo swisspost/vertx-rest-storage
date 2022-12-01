@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.swisspush</groupId>
     <artifactId>rest-storage</artifactId>
-    <version>3.0.6-SNAPSHOT</version>
+    <version>3.0.7-SNAPSHOT</version>
     <name>rest-storage</name>
     <description>
         Persistence for REST resources in the filesystem or a redis database
@@ -187,9 +187,11 @@
                                 <goal>sign</goal>
                             </goals>
                             <configuration>
-                                <homedir>${session.executionRootDirectory}</homedir>
-                                <keyname>230584D7</keyname>
-                                <!--<executable>C:\Program Files (x86)\GnuPG\bin\gpg.exe</executable>-->
+                                <!-- Prevent gpg from using pinentry programs -->
+                                <gpgArguments>
+                                    <arg>--pinentry-mode</arg>
+                                    <arg>loopback</arg>
+                                </gpgArguments>
                             </configuration>
                         </execution>
                     </executions>
@@ -345,9 +347,11 @@
                                     <goal>sign</goal>
                                 </goals>
                                 <configuration>
-                                    <homedir>${session.executionRootDirectory}</homedir>
-                                    <keyname>230584D7</keyname>
-                                    <!--<executable>C:\Program Files (x86)\GnuPG\bin\gpg.exe</executable>-->
+                                    <!-- Prevent gpg from using pinentry programs -->
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
                                 </configuration>
                             </execution>
                         </executions>

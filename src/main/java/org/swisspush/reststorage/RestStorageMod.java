@@ -63,6 +63,7 @@ public class RestStorageMod extends AbstractVerticle {
                 .setPassword((moduleConfiguration.getRedisAuth() == null ? "" : moduleConfiguration.getRedisAuth()))
                 .setMaxPoolSize(moduleConfiguration.getMaxRedisConnectionPoolSize())
                 .setMaxPoolWaiting(moduleConfiguration.getMaxQueueWaiting())
+                .setMaxWaitingHandlers(moduleConfiguration.getMaxRedisWaitingHandlers())
         ).connect(redisConnectionEvent -> {
             if (redisConnectionEvent.failed()) {
                 promise.fail(redisConnectionEvent.cause());

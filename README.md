@@ -98,7 +98,7 @@ Invoking DELETE request on a collection deletes the collection and all its child
 
 The StorageExpand feature expands the hierarchical resources and returns them as a single concatenated json resource.
 
-Having the following resources in the storage
+Having the following resources in the storage:
 
 ```sh
 key: data:test:collection:resource1     value: {"myProp1": "myVal1"}

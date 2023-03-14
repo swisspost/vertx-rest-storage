@@ -37,6 +37,7 @@ public class ModuleConfiguration {
     private boolean            return200onDeleteNonExisting  = false                     ;
     private int                maxRedisConnectionPoolSize    = 24                        ;
     private int                maxQueueWaiting               = 24                        ;
+    private int                maxRedisWaitingHandlers       = 2048                      ;
 
 
     public ModuleConfiguration root(String root) {
@@ -149,6 +150,11 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration maxRedisWaitingHandlers(int maxRedisWaitingHandlers) {
+        this.maxRedisWaitingHandlers = maxRedisWaitingHandlers;
+        return this;
+    }
+
     public ModuleConfiguration return200onDeleteNonExisting(boolean deleteNonExistingReturn200) {
         this.return200onDeleteNonExisting = deleteNonExistingReturn200;
         return this;
@@ -232,6 +238,10 @@ public class ModuleConfiguration {
 
     public int getMaxQueueWaiting() {
         return maxQueueWaiting;
+    }
+
+    public int getMaxRedisWaitingHandlers() {
+        return maxRedisWaitingHandlers;
     }
 
     public JsonObject asJsonObject(){

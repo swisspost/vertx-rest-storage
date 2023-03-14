@@ -46,6 +46,7 @@ public class ModuleConfigurationTest {
         testContext.assertFalse(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 60000L);
         testContext.assertFalse(config.isReturn200onDeleteNonExisting());
+        testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 2048);
     }
 
     @Test
@@ -59,6 +60,7 @@ public class ModuleConfigurationTest {
                 .confirmCollectionDelete(true)
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(10000)
+                .maxRedisWaitingHandlers(4096)
                 .return200onDeleteNonExisting(true);
 
         // go through JSON encode/decode
@@ -89,6 +91,7 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 10000L);
         testContext.assertTrue(config.isReturn200onDeleteNonExisting());
+        testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 4096);
     }
 
     @Test
@@ -104,6 +107,7 @@ public class ModuleConfigurationTest {
         testContext.assertNull(json.getJsonObject("editorConfig"));
         testContext.assertEquals(json.getString("redisHost"), "localhost");
         testContext.assertEquals(json.getInteger("redisPort"), 6379);
+        testContext.assertEquals(json.getInteger("maxRedisWaitingHandlers"), 2048);
         testContext.assertNull(json.getString("redisAuth"));
         testContext.assertEquals(json.getString("expirablePrefix"), "rest-storage:expirable");
         testContext.assertEquals(json.getString("resourcesPrefix"), "rest-storage:resources");
@@ -126,6 +130,7 @@ public class ModuleConfigurationTest {
                 .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
+                .maxRedisWaitingHandlers(4096)
                 .confirmCollectionDelete(true)
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(5000);
@@ -153,6 +158,7 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(json.getBoolean("confirmCollectionDelete"));
         testContext.assertTrue(json.getBoolean("rejectStorageWriteOnLowMemory"));
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 5000L);
+        testContext.assertEquals(json.getInteger("maxRedisWaitingHandlers"), 4096);
 
         testContext.assertNotNull(json.getJsonObject("editorConfig"));
         testContext.assertTrue(json.getJsonObject("editorConfig").containsKey("myKey"));
@@ -172,6 +178,7 @@ public class ModuleConfigurationTest {
         testContext.assertNull(config.getEditorConfig());
         testContext.assertEquals(config.getRedisHost(), "localhost");
         testContext.assertEquals(config.getRedisPort(), 6379);
+        testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 2048);
         testContext.assertEquals(config.getExpirablePrefix(), "rest-storage:expirable");
         testContext.assertEquals(config.getResourcesPrefix(), "rest-storage:resources");
         testContext.assertEquals(config.getCollectionsPrefix(), "rest-storage:collections");
@@ -196,6 +203,7 @@ public class ModuleConfigurationTest {
         json.put("editorConfig", new JsonObject().put("myKey", "myValue"));
         json.put("redisHost", "newredishost");
         json.put("redisPort", 4321);
+        json.put("maxRedisWaitingHandlers", 4096);
         json.put("expirablePrefix", "newExpirablePrefix");
         json.put("resourcesPrefix", "newResourcesPrefix");
         json.put("collectionsPrefix", "newCollectionsPrefix");
@@ -220,6 +228,7 @@ public class ModuleConfigurationTest {
 
         testContext.assertEquals(config.getRedisHost(), "newredishost");
         testContext.assertEquals(config.getRedisPort(), 4321);
+        testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 4096);
         testContext.assertEquals(config.getExpirablePrefix(), "newExpirablePrefix");
         testContext.assertEquals(config.getResourcesPrefix(), "newResourcesPrefix");
         testContext.assertEquals(config.getCollectionsPrefix(), "newCollectionsPrefix");

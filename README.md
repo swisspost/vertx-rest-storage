@@ -27,7 +27,7 @@ The following methods are supported on intermediate nodes (collections):
 Runs either as a module or can be integrated into an existing application by instantiating the RestStorageHandler class directly.
 
 ## Run it
-1. clone the repository.
+1. clone the repository
 2. Install and start Redis
   * Debian/Ubuntu: `apt-get install redis-server`
   * Fedora/RedHat/CentOS: `yum install redis`

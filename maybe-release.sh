@@ -11,7 +11,7 @@ fi
 echo 'starting a new nexus repository ...'
 OUTPUT=$(groovy staging.groovy start)
 echo "repository Id: $OUTPUT"
-mvn -X -B -Prelease jgitflow:release-start jgitflow:release-finish -DrepositoryId=${OUTPUT}
+mvn -B -Prelease jgitflow:release-start jgitflow:release-finish -DrepositoryId=${OUTPUT}
 rc=$?
 if [ $rc -eq 0 ]
 then

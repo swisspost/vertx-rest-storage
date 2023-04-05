@@ -662,7 +662,8 @@ public class RedisStorage implements Storage {
             } else {
                 r.readStream = new ByteArrayReadStream(content);
                 r.length = content.length;
-                r.etag = values.get(2).toString();
+                Response etagRsp = values.get(2);
+                r.etag = etagRsp == null ? null : etagRsp.toString();
                 r.closeHandler = event -> {
                     // nothing to close
                 };

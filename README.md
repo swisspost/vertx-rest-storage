@@ -2,7 +2,7 @@
 
 [![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
 [![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspost/vertx-rest-storage)
-[![](https://img.shields.io/github/issues-raw/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20)
+[![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg?event=issues)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
 [![GitHub contributors](https://img.shields.io/github/contributors/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
 
 [![GitHub release](https://img.shields.io/github/release/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
@@ -248,6 +248,3 @@ Caution: The redis storage implementation does not currently support streaming. 
 - Starting from 2.6.x rest-storage requires **Java 11**.
 
 - This module uses Vert.x v3.3.3 (or later), so **Java 8** is required.
-
-
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/lbovet/vertx-rest-storage/trend.png)](https://bitdeli.com/free "Bitdeli Badge") 

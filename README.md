@@ -1,11 +1,11 @@
 # vertx-rest-storage
 
-[![Build Status](https://travis-ci.com/swisspush/vertx-rest-storage.svg?branch=master)](https://travis-ci.com/swisspush/vertx-rest-storage)
-[![codecov](https://codecov.io/gh/swisspush/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspush/vertx-rest-storage)
-[![](https://img.shields.io/github/issues-raw/swisspush/rest-storage.svg)](https://github.com/swisspush/vertx-rest-storage/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20)
-[![GitHub contributors](https://img.shields.io/github/contributors/swisspush/rest-storage.svg)](https://github.com/swisspush/vertx-rest-storage/graphs/contributors)
+[![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
+[![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspost/vertx-rest-storage)
+[![](https://img.shields.io/github/issues-raw/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20)
+[![GitHub contributors](https://img.shields.io/github/contributors/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
 
-[![GitHub release](https://img.shields.io/github/release/swisspush/rest-storage.svg)](https://github.com/swisspush/vertx-rest-storage/releases/latest)
+[![GitHub release](https://img.shields.io/github/release/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
 [![Maven Central](https://img.shields.io/maven-central/v/org.swisspush/rest-storage.svg)]()
 
 Persistence for REST resources in the filesystem or a redis database. 

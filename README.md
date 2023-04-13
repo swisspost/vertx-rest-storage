@@ -1,11 +1,11 @@
 # vertx-rest-storage
 
-[![Build Status](https://travis-ci.com/swisspush/vertx-rest-storage.svg?branch=master)](https://travis-ci.com/swisspush/vertx-rest-storage)
-[![codecov](https://codecov.io/gh/swisspush/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspush/vertx-rest-storage)
-[![](https://img.shields.io/github/issues-raw/swisspush/rest-storage.svg)](https://github.com/swisspush/vertx-rest-storage/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20)
-[![GitHub contributors](https://img.shields.io/github/contributors/swisspush/rest-storage.svg)](https://github.com/swisspush/vertx-rest-storage/graphs/contributors)
+[![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
+[![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspost/vertx-rest-storage)
+[![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg?event=issues)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
+[![GitHub contributors](https://img.shields.io/github/contributors/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
 
-[![GitHub release](https://img.shields.io/github/release/swisspush/rest-storage.svg)](https://github.com/swisspush/vertx-rest-storage/releases/latest)
+[![GitHub release](https://img.shields.io/github/release/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
 [![Maven Central](https://img.shields.io/maven-central/v/org.swisspush/rest-storage.svg)]()
 
 Persistence for REST resources in the filesystem or a redis database. 
@@ -189,26 +189,27 @@ The data compression feature is not compatible with all vertx-rest-storage featu
 
 The following configuration values are available:
 
-| Property | Type | Default value | Description | 
-|:--------- | :----------- | :----------- | :----------- |
-| root | common | . | The prefix for the directory or redis key |
-| storageType | common | filesystem | The storage implementation to use. Choose between filesystem or redis |
-| port | common | 8989 | The port the mod listens to. |
-| prefix | common | / | The part of the URL path before this handler (aka "context path" in JEE terminology) |
-| storageAddress | common | resource-storage | The eventbus address the mod listens to. |
-| editorConfig | common |  | Additional configuration values for the editor |
-| confirmCollectionDelete | common | false | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections |
-| redisHost | redis | localhost | The host where redis is running on |
-| redisPort | redis | 6379 | The port where redis is running on |
-| expirablePrefix | redis | rest-storage:expirable | The prefix for expirable data redis keys |
-| resourcesPrefix | redis | rest-storage:resources | The prefix for resources redis keys |
-| collectionsPrefix | redis | rest-storage:collections | The prefix for collections redis keys |
-| deltaResourcesPrefix | redis | delta:resources | The prefix for delta resources redis keys |
-| deltaEtagsPrefix | redis | delta:etags | The prefix for delta etags redis keys |
-| lockPrefix | redis | rest-storage:locks | The prefix for lock redis keys |
-| resourceCleanupAmount | redis | 100000 | The maximum amount of resources to clean in a single cleanup run |
-| rejectStorageWriteOnLowMemory | redis | false | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low |
-| freeMemoryCheckIntervalMs | redis | 60000 | The interval in milliseconds to calculate the actual memory usage |
+| Property | Type | Default value            | Description                                                                                              | 
+|:--------- | :----------- |:-------------------------|:---------------------------------------------------------------------------------------------------------|
+| root | common | .                        | The prefix for the directory or redis key                                                                |
+| storageType | common | filesystem               | The storage implementation to use. Choose between filesystem or redis                                    |
+| port | common | 8989                     | The port the mod listens to when HTTP API is enabled.                                                    |
+| httpRequestHandlerEnabled | common | true                     | When set to _false_, the storage is accessible throught the event bus only.                              |
+| prefix | common | /                        | The part of the URL path before this handler (aka "context path" in JEE terminology)                     |
+| storageAddress | common | resource-storage         | The eventbus address the mod listens to.                                                                 |
+| editorConfig | common |                          | Additional configuration values for the editor                                                           |
+| confirmCollectionDelete | common | false                    | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections     |
+| redisHost | redis | localhost                | The host where redis is running on                                                                       |
+| redisPort | redis | 6379                     | The port where redis is running on                                                                       |
+| expirablePrefix | redis | rest-storage:expirable   | The prefix for expirable data redis keys                                                                 |
+| resourcesPrefix | redis | rest-storage:resources   | The prefix for resources redis keys                                                                      |
+| collectionsPrefix | redis | rest-storage:collections | The prefix for collections redis keys                                                                    |
+| deltaResourcesPrefix | redis | delta:resources          | The prefix for delta resources redis keys                                                                |
+| deltaEtagsPrefix | redis | delta:etags              | The prefix for delta etags redis keys                                                                    |
+| lockPrefix | redis | rest-storage:locks       | The prefix for lock redis keys                                                                           |
+| resourceCleanupAmount | redis | 100000                   | The maximum amount of resources to clean in a single cleanup run                                         |
+| rejectStorageWriteOnLowMemory | redis | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low |
+| freeMemoryCheckIntervalMs | redis | 60000                    | The interval in milliseconds to calculate the actual memory usage                                        |
 
 ### Configuration util
 
@@ -247,6 +248,3 @@ Caution: The redis storage implementation does not currently support streaming. 
 - Starting from 2.6.x rest-storage requires **Java 11**.
 
 - This module uses Vert.x v3.3.3 (or later), so **Java 8** is required.
-
-
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/lbovet/vertx-rest-storage/trend.png)](https://bitdeli.com/free "Bitdeli Badge") 

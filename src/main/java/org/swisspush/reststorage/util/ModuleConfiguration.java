@@ -18,6 +18,7 @@ public class ModuleConfiguration {
     private String             root                          = "."                       ;
     private StorageType        storageType                   = StorageType.filesystem    ;
     private int                port                          = 8989                      ;
+    private boolean            httpRequestHandlerEnabled     = true                      ;
     private String             prefix                        = ""                        ;
     private String             storageAddress                = "resource-storage"        ;
     private Map<String,String> editorConfig                  = null                      ;
@@ -57,6 +58,11 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration port(int port) {
         this.port = port;
+        return this;
+    }
+
+    public ModuleConfiguration httpRequestHandlerEnabled(boolean httpRequestHandlerEnabled) {
+        this.httpRequestHandlerEnabled = httpRequestHandlerEnabled;
         return this;
     }
 
@@ -170,6 +176,10 @@ public class ModuleConfiguration {
 
     public int getPort() {
         return port;
+    }
+
+    public boolean isHttpRequestHandlerEnabled() {
+        return httpRequestHandlerEnabled;
     }
 
     public String getPrefix() {

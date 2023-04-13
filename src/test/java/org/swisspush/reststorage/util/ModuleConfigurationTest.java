@@ -30,6 +30,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRoot(), ".");
         testContext.assertEquals(config.getStorageType(), StorageType.filesystem);
         testContext.assertEquals(config.getPort(), 8989);
+        testContext.assertTrue(config.isHttpRequestHandlerEnabled());
         testContext.assertEquals(config.getPrefix(), "");
         testContext.assertEquals(config.getStorageAddress(), "resource-storage");
         testContext.assertNull(config.getEditorConfig());
@@ -58,6 +59,7 @@ public class ModuleConfigurationTest {
                     put("myKey", "myValue");
                 }})
                 .confirmCollectionDelete(true)
+                .httpRequestHandlerEnabled(false)
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(10000)
                 .maxRedisWaitingHandlers(4096)
@@ -84,6 +86,7 @@ public class ModuleConfigurationTest {
             // overriden values
         testContext.assertEquals(config.getRedisHost(), "anotherhost");
         testContext.assertEquals(config.getRedisPort(), 1234);
+        testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertNotNull(config.getEditorConfig());
         testContext.assertTrue(config.getEditorConfig().containsKey("myKey"));
         testContext.assertEquals(config.getEditorConfig().get("myKey"), "myValue");
@@ -102,6 +105,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getString("root"), ".");
         testContext.assertEquals(json.getString("storageType"), StorageType.filesystem.name());
         testContext.assertEquals(json.getInteger("port"), 8989);
+        testContext.assertTrue(json.getBoolean("httpRequestHandlerEnabled"));
         testContext.assertEquals(json.getString("prefix"), "");
         testContext.assertEquals(json.getString("storageAddress"), "resource-storage");
         testContext.assertNull(json.getJsonObject("editorConfig"));
@@ -131,6 +135,7 @@ public class ModuleConfigurationTest {
                     put("myKey", "myValue");
                 }})
                 .maxRedisWaitingHandlers(4096)
+                .httpRequestHandlerEnabled(false)
                 .confirmCollectionDelete(true)
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(5000);
@@ -141,6 +146,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getString("root"), ".");
         testContext.assertEquals(json.getString("storageType"), StorageType.filesystem.name());
         testContext.assertEquals(json.getInteger("port"), 8989);
+        testContext.assertFalse(json.getBoolean("httpRequestHandlerEnabled"));
         testContext.assertEquals(json.getString("prefix"), "");
         testContext.assertEquals(json.getString("storageAddress"), "resource-storage");
         testContext.assertEquals(json.getString("expirablePrefix"), "rest-storage:expirable");
@@ -198,6 +204,7 @@ public class ModuleConfigurationTest {
         json.put("root", "newroot");
         json.put("storageType", "redis");
         json.put("port", 1234);
+        json.put("httpRequestHandlerEnabled", false);
         json.put("prefix", "newprefix");
         json.put("storageAddress", "newStorageAddress");
         json.put("editorConfig", new JsonObject().put("myKey", "myValue"));
@@ -219,6 +226,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRoot(), "newroot");
         testContext.assertEquals(config.getStorageType(), StorageType.redis);
         testContext.assertEquals(config.getPort(), 1234);
+        testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertEquals(config.getPrefix(), "newprefix");
         testContext.assertEquals(config.getStorageAddress(), "newStorageAddress");
 

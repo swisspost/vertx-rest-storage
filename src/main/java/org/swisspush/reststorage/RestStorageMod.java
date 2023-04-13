@@ -25,17 +25,22 @@ public class RestStorageMod extends AbstractVerticle {
             } else {
                 Handler<HttpServerRequest> handler = new RestStorageHandler(vertx, log, event.result(), modConfig);
 
-                // in Vert.x 2x 100-continues was activated per default, in vert.x 3x it is off per default.
-                HttpServerOptions options = new HttpServerOptions().setHandle100ContinueAutomatically(true);
+                if(modConfig.isHttpRequestHandlerEnabled()) {
+                    // in Vert.x 2x 100-continues was activated per default, in vert.x 3x it is off per default.
+                    HttpServerOptions options = new HttpServerOptions().setHandle100ContinueAutomatically(true);
 
-                vertx.createHttpServer(options).requestHandler(handler).listen(modConfig.getPort(), result -> {
-                    if (result.succeeded()) {
-                        new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
-                        promise.complete();
-                    } else {
-                        promise.fail(result.cause());
-                    }
-                });
+                    vertx.createHttpServer(options).requestHandler(handler).listen(modConfig.getPort(), result -> {
+                        if (result.succeeded()) {
+                            new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
+                            promise.complete();
+                        } else {
+                            promise.fail(result.cause());
+                        }
+                    });
+                } else {
+                    new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
+                    promise.complete();
+                }
             }
         });
     }

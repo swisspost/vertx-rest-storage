@@ -1,7 +1,7 @@
 # vertx-rest-storage
 
 [![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
-[![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspost/vertx-rest-storage)
+[![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg?token=ufyTWmGbC6)](https://codecov.io/gh/swisspost/vertx-rest-storage)
 [![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg?event=issues)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
 [![GitHub contributors](https://img.shields.io/github/contributors/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
 

@@ -1,5 +1,6 @@
 package org.swisspush.reststorage;
 
+import io.netty.util.internal.StringUtil;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
@@ -8,13 +9,12 @@ import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.Pump;
+import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BasicAuthHandler;
 import org.slf4j.Logger;
-import org.swisspush.reststorage.util.LockMode;
-import org.swisspush.reststorage.util.ModuleConfiguration;
-import org.swisspush.reststorage.util.ResourceNameUtil;
-import org.swisspush.reststorage.util.StatusCode;
+import org.swisspush.reststorage.util.*;
 
 import java.text.DecimalFormat;
 import java.util.*;
@@ -57,6 +57,15 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
 
         if (config.getEditorConfig() != null) {
             editors.putAll(config.getEditorConfig());
+        }
+
+        Result<Boolean, String> result = checkHttpAuthenticationConfiguration(config);
+        if(result.isErr()) {
+            router.route().handler(ctx -> respondWith(ctx.response(), StatusCode.INTERNAL_SERVER_ERROR, result.getErr()));
+        } else if (result.getOk()) {
+            AuthenticationProvider authProvider = new ModuleConfigurationAuthentication(config);
+            router.route().handler(BasicAuthHandler.create(authProvider));
+            log.info("Authentication enabled for HTTP API");
         }
 
         router.postWithRegex(".*_cleanup").handler(this::cleanup);
@@ -661,6 +670,19 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     ////////////////////////////
     // End Router handling    //
     ////////////////////////////
+
+    private Result<Boolean, String> checkHttpAuthenticationConfiguration(ModuleConfiguration modConfig) {
+        if(modConfig.isHttpRequestHandlerAuthenticationEnabled()) {
+            if(StringUtil.isNullOrEmpty(modConfig.getHttpRequestHandlerUsername()) ||
+                    StringUtil.isNullOrEmpty(modConfig.getHttpRequestHandlerPassword())) {
+                String msg = "HTTP API authentication is enabled but username and/or password is missing";
+                log.warn(msg);
+                return Result.err(msg);
+            }
+            return Result.ok(true);
+        }
+        return Result.ok(false);
+    }
 
     private String cleanPath(String value) {
         value = value.replaceAll("\\.\\.", "").replaceAll("\\/\\/", "/");

@@ -29,11 +29,11 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private final Router router;
     private final Storage storage;
 
-    private MimeTypeResolver mimeTypeResolver = new MimeTypeResolver("application/json; charset=utf-8");
+    private final MimeTypeResolver mimeTypeResolver = new MimeTypeResolver("application/json; charset=utf-8");
 
-    private Map<String, String> editors = new LinkedHashMap<>();
+    private final Map<String, String> editors = new LinkedHashMap<>();
 
-    private String newMarker = "?new=true";
+    private final String newMarker = "?new=true";
     private final String prefixFixed;
     private final String prefix;
     private final boolean confirmCollectionDelete;
@@ -64,7 +64,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
             router.route().handler(ctx -> respondWith(ctx.response(), StatusCode.INTERNAL_SERVER_ERROR, result.getErr()));
         } else if (result.getOk()) {
             AuthenticationProvider authProvider = new ModuleConfigurationAuthentication(config);
-            router.route().handler(BasicAuthHandler.create(authProvider));
+                router.route().handler(BasicAuthHandler.create(authProvider));
             log.info("Authentication enabled for HTTP API");
         }
 

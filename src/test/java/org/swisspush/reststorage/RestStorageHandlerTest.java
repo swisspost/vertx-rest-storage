@@ -86,7 +86,7 @@ public class RestStorageHandlerTest {
         // ASSERT
         verify(response, times(1)).setStatusCode(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusCode()));
         verify(response, times(1)).setStatusMessage(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage()));
-        verify(response, times(1)).end(eq("HTTP API authentication is enabled but username and/or password is missing"));
+        verify(response, times(1)).end(eq("HTTP API authentication is enabled but credentials are missing"));
 
         Mockito.reset(response);
 
@@ -106,7 +106,7 @@ public class RestStorageHandlerTest {
         // ASSERT
         verify(response, times(1)).setStatusCode(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusCode()));
         verify(response, times(1)).setStatusMessage(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage()));
-        verify(response, times(1)).end(eq("HTTP API authentication is enabled but username and/or password is missing"));
+        verify(response, times(1)).end(eq("HTTP API authentication is enabled but credentials are missing"));
     }
 
     @Test

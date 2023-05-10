@@ -675,7 +675,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         if(modConfig.isHttpRequestHandlerAuthenticationEnabled()) {
             if(StringUtil.isNullOrEmpty(modConfig.getHttpRequestHandlerUsername()) ||
                     StringUtil.isNullOrEmpty(modConfig.getHttpRequestHandlerPassword())) {
-                String msg = "HTTP API authentication is enabled but username and/or password is missing";
+                String msg = "HTTP API authentication is enabled but credentials are missing";
                 log.warn(msg);
                 return Result.err(msg);
             }

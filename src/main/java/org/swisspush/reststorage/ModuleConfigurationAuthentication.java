@@ -22,7 +22,7 @@ public class ModuleConfigurationAuthentication implements AuthenticationProvider
 
     private final static Logger logger = Logger.getLogger(ModuleConfigurationAuthentication.class.getName());
 
-    private static final String INVALID_CREDENTIALS = "invalid username/password";
+    private static final String INVALID_CREDENTIALS = "invalid credentials";
 
     private static class User {
         final String name;
@@ -43,7 +43,7 @@ public class ModuleConfigurationAuthentication implements AuthenticationProvider
         String password = configuration.getHttpRequestHandlerPassword();
 
         if (StringUtil.isNullOrEmpty(username) || StringUtil.isNullOrEmpty(password)) {
-            logger.warning("Username and/or password is missing/empty");
+            logger.warning("Credentials are missing/empty");
             this.user = null;
         } else {
             this.user = new User(username, password);

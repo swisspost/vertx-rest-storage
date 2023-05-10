@@ -31,6 +31,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getStorageType(), StorageType.filesystem);
         testContext.assertEquals(config.getPort(), 8989);
         testContext.assertTrue(config.isHttpRequestHandlerEnabled());
+        testContext.assertFalse(config.isHttpRequestHandlerAuthenticationEnabled());
+        testContext.assertNull(config.getHttpRequestHandlerUsername());
+        testContext.assertNull(config.getHttpRequestHandlerPassword());
         testContext.assertEquals(config.getPrefix(), "");
         testContext.assertEquals(config.getStorageAddress(), "resource-storage");
         testContext.assertNull(config.getEditorConfig());
@@ -60,6 +63,9 @@ public class ModuleConfigurationTest {
                 }})
                 .confirmCollectionDelete(true)
                 .httpRequestHandlerEnabled(false)
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerUsername("foo")
+                .httpRequestHandlerPassword("bar")
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(10000)
                 .maxRedisWaitingHandlers(4096)
@@ -83,7 +89,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getResourceCleanupAmount(), 100000L);
         testContext.assertEquals(config.getLockPrefix(), "rest-storage:locks");
 
-            // overriden values
+        // overridden values
         testContext.assertEquals(config.getRedisHost(), "anotherhost");
         testContext.assertEquals(config.getRedisPort(), 1234);
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
@@ -95,6 +101,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 10000L);
         testContext.assertTrue(config.isReturn200onDeleteNonExisting());
         testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 4096);
+        testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
+        testContext.assertEquals(config.getHttpRequestHandlerUsername(), "foo");
+        testContext.assertEquals(config.getHttpRequestHandlerPassword(), "bar");
     }
 
     @Test
@@ -106,6 +115,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getString("storageType"), StorageType.filesystem.name());
         testContext.assertEquals(json.getInteger("port"), 8989);
         testContext.assertTrue(json.getBoolean("httpRequestHandlerEnabled"));
+        testContext.assertFalse(json.getBoolean("httpRequestHandlerAuthenticationEnabled"));
+        testContext.assertNull(json.getJsonObject("httpRequestHandlerUsername"));
+        testContext.assertNull(json.getJsonObject("httpRequestHandlerPassword"));
         testContext.assertEquals(json.getString("prefix"), "");
         testContext.assertEquals(json.getString("storageAddress"), "resource-storage");
         testContext.assertNull(json.getJsonObject("editorConfig"));
@@ -136,6 +148,9 @@ public class ModuleConfigurationTest {
                 }})
                 .maxRedisWaitingHandlers(4096)
                 .httpRequestHandlerEnabled(false)
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerUsername("foo")
+                .httpRequestHandlerPassword("bar")
                 .confirmCollectionDelete(true)
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(5000);
@@ -169,6 +184,10 @@ public class ModuleConfigurationTest {
         testContext.assertNotNull(json.getJsonObject("editorConfig"));
         testContext.assertTrue(json.getJsonObject("editorConfig").containsKey("myKey"));
         testContext.assertEquals(json.getJsonObject("editorConfig").getString("myKey"), "myValue");
+
+        testContext.assertTrue(json.getBoolean("httpRequestHandlerAuthenticationEnabled"));
+        testContext.assertEquals(json.getString("httpRequestHandlerUsername"), "foo");
+        testContext.assertEquals(json.getString("httpRequestHandlerPassword"), "bar");
     }
 
     @Test
@@ -195,6 +214,10 @@ public class ModuleConfigurationTest {
         testContext.assertFalse(config.isConfirmCollectionDelete());
         testContext.assertFalse(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 60000L);
+        testContext.assertTrue(config.isHttpRequestHandlerEnabled());
+        testContext.assertFalse(config.isHttpRequestHandlerAuthenticationEnabled());
+        testContext.assertNull(config.getHttpRequestHandlerUsername());
+        testContext.assertNull(config.getHttpRequestHandlerPassword());
     }
 
     @Test
@@ -205,6 +228,9 @@ public class ModuleConfigurationTest {
         json.put("storageType", "redis");
         json.put("port", 1234);
         json.put("httpRequestHandlerEnabled", false);
+        json.put("httpRequestHandlerAuthenticationEnabled", true);
+        json.put("httpRequestHandlerUsername", "foo");
+        json.put("httpRequestHandlerPassword", "bar");
         json.put("prefix", "newprefix");
         json.put("storageAddress", "newStorageAddress");
         json.put("editorConfig", new JsonObject().put("myKey", "myValue"));
@@ -227,6 +253,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getStorageType(), StorageType.redis);
         testContext.assertEquals(config.getPort(), 1234);
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
+        testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
+        testContext.assertEquals(config.getHttpRequestHandlerUsername(), "foo");
+        testContext.assertEquals(config.getHttpRequestHandlerPassword(), "bar");
         testContext.assertEquals(config.getPrefix(), "newprefix");
         testContext.assertEquals(config.getStorageAddress(), "newStorageAddress");
 

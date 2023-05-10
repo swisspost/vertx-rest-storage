@@ -1,7 +1,7 @@
 # vertx-rest-storage
 
 [![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
-[![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg)](https://codecov.io/gh/swisspost/vertx-rest-storage)
+[![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg?token=ufyTWmGbC6)](https://codecov.io/gh/swisspost/vertx-rest-storage)
 [![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg?event=issues)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
 [![GitHub contributors](https://img.shields.io/github/contributors/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
 
@@ -195,6 +195,9 @@ The following configuration values are available:
 | storageType | common | filesystem               | The storage implementation to use. Choose between filesystem or redis                                    |
 | port | common | 8989                     | The port the mod listens to when HTTP API is enabled.                                                    |
 | httpRequestHandlerEnabled | common | true                     | When set to _false_, the storage is accessible throught the event bus only.                              |
+| httpRequestHandlerAuthenticationEnabled | common | false                    | Enable / disable authentication for the HTTP API                                                         |
+| httpRequestHandlerUsername | common |                     | The username for the HTTP API authentication                                                             |
+| httpRequestHandlerPassword | common |                     | The password for the HTTP API authentication                                                             |
 | prefix | common | /                        | The part of the URL path before this handler (aka "context path" in JEE terminology)                     |
 | storageAddress | common | resource-storage         | The eventbus address the mod listens to.                                                                 |
 | editorConfig | common |                          | Additional configuration values for the editor                                                           |
@@ -213,7 +216,7 @@ The following configuration values are available:
 
 ### Configuration util
 
-The configurations have to be passed as JsonObject to the module. For a simplyfied configuration the _ModuleConfigurationBuilder_ can be used.
+The configurations have to be passed as JsonObject to the module. For a simplified configuration the _ModuleConfigurationBuilder_ can be used.
 
 Example:
 

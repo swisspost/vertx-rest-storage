@@ -15,30 +15,33 @@ public class ModuleConfiguration {
         filesystem, redis
     }
 
-    private String             root                          = "."                       ;
-    private StorageType        storageType                   = StorageType.filesystem    ;
-    private int                port                          = 8989                      ;
-    private boolean            httpRequestHandlerEnabled     = true                      ;
-    private String             prefix                        = ""                        ;
-    private String             storageAddress                = "resource-storage"        ;
-    private Map<String,String> editorConfig                  = null                      ;
-    private String             redisHost                     = "localhost"               ;
-    private int                redisPort                     = 6379                      ;
-    private String             redisAuth                     = null                      ;
-    private String             expirablePrefix               = "rest-storage:expirable"  ;
-    private String             resourcesPrefix               = "rest-storage:resources"  ;
-    private String             collectionsPrefix             = "rest-storage:collections";
-    private String             deltaResourcesPrefix          = "delta:resources"         ;
-    private String             deltaEtagsPrefix              = "delta:etags"             ;
-    private long               resourceCleanupAmount         = 100_000L                  ;
-    private String             lockPrefix                    = "rest-storage:locks"      ;
-    private boolean            confirmCollectionDelete       = false                     ;
-    private boolean            rejectStorageWriteOnLowMemory = false                     ;
-    private long               freeMemoryCheckIntervalMs     = 60_000L                   ;
-    private boolean            return200onDeleteNonExisting  = false                     ;
-    private int                maxRedisConnectionPoolSize    = 24                        ;
-    private int                maxQueueWaiting               = 24                        ;
-    private int                maxRedisWaitingHandlers       = 2048                      ;
+    private String root = ".";
+    private StorageType storageType = StorageType.filesystem;
+    private int port = 8989;
+    private boolean httpRequestHandlerEnabled = true;
+    private boolean httpRequestHandlerAuthenticationEnabled = false;
+    private String httpRequestHandlerUsername;
+    private String httpRequestHandlerPassword;
+    private String prefix = "";
+    private String storageAddress = "resource-storage";
+    private Map<String, String> editorConfig = null;
+    private String redisHost = "localhost";
+    private int redisPort = 6379;
+    private String redisAuth = null;
+    private String expirablePrefix = "rest-storage:expirable";
+    private String resourcesPrefix = "rest-storage:resources";
+    private String collectionsPrefix = "rest-storage:collections";
+    private String deltaResourcesPrefix = "delta:resources";
+    private String deltaEtagsPrefix = "delta:etags";
+    private long resourceCleanupAmount = 100_000L;
+    private String lockPrefix = "rest-storage:locks";
+    private boolean confirmCollectionDelete = false;
+    private boolean rejectStorageWriteOnLowMemory = false;
+    private long freeMemoryCheckIntervalMs = 60_000L;
+    private boolean return200onDeleteNonExisting = false;
+    private int maxRedisConnectionPoolSize = 24;
+    private int maxQueueWaiting = 24;
+    private int maxRedisWaitingHandlers = 2048;
 
 
     public ModuleConfiguration root(String root) {
@@ -66,6 +69,21 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration httpRequestHandlerAuthenticationEnabled(boolean httpRequestHandlerAuthenticationEnabled) {
+        this.httpRequestHandlerAuthenticationEnabled = httpRequestHandlerAuthenticationEnabled;
+        return this;
+    }
+
+    public ModuleConfiguration httpRequestHandlerUsername(String httpRequestHandlerUsername) {
+        this.httpRequestHandlerUsername = httpRequestHandlerUsername;
+        return this;
+    }
+
+    public ModuleConfiguration httpRequestHandlerPassword(String httpRequestHandlerPassword) {
+        this.httpRequestHandlerPassword = httpRequestHandlerPassword;
+        return this;
+    }
+
     public ModuleConfiguration prefix(String prefix) {
         this.prefix = prefix;
         return this;
@@ -76,7 +94,7 @@ public class ModuleConfiguration {
         return this;
     }
 
-    public ModuleConfiguration editorConfig(Map<String,String> editorConfig) {
+    public ModuleConfiguration editorConfig(Map<String, String> editorConfig) {
         this.editorConfig = editorConfig;
         return this;
     }
@@ -182,6 +200,18 @@ public class ModuleConfiguration {
         return httpRequestHandlerEnabled;
     }
 
+    public boolean isHttpRequestHandlerAuthenticationEnabled() {
+        return httpRequestHandlerAuthenticationEnabled;
+    }
+
+    public String getHttpRequestHandlerUsername() {
+        return httpRequestHandlerUsername;
+    }
+
+    public String getHttpRequestHandlerPassword() {
+        return httpRequestHandlerPassword;
+    }
+
     public String getPrefix() {
         return prefix;
     }
@@ -230,13 +260,21 @@ public class ModuleConfiguration {
         return resourceCleanupAmount;
     }
 
-    public String getLockPrefix() { return lockPrefix; }
+    public String getLockPrefix() {
+        return lockPrefix;
+    }
 
-    public boolean isConfirmCollectionDelete() { return confirmCollectionDelete; }
+    public boolean isConfirmCollectionDelete() {
+        return confirmCollectionDelete;
+    }
 
-    public boolean isRejectStorageWriteOnLowMemory() { return rejectStorageWriteOnLowMemory; }
+    public boolean isRejectStorageWriteOnLowMemory() {
+        return rejectStorageWriteOnLowMemory;
+    }
 
-    public long getFreeMemoryCheckIntervalMs() { return freeMemoryCheckIntervalMs; }
+    public long getFreeMemoryCheckIntervalMs() {
+        return freeMemoryCheckIntervalMs;
+    }
 
     public boolean isReturn200onDeleteNonExisting() {
         return return200onDeleteNonExisting;
@@ -254,11 +292,11 @@ public class ModuleConfiguration {
         return maxRedisWaitingHandlers;
     }
 
-    public JsonObject asJsonObject(){
+    public JsonObject asJsonObject() {
         return JsonObject.mapFrom(this);
     }
 
-    public static ModuleConfiguration fromJsonObject(JsonObject json){
+    public static ModuleConfiguration fromJsonObject(JsonObject json) {
         ModuleConfiguration mc = json.mapTo(ModuleConfiguration.class);
         return mc;
     }

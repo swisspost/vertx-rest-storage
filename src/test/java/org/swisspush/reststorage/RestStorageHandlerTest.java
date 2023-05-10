@@ -1,9 +1,6 @@
 package org.swisspush.reststorage;
 
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.MultiMap;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.buffer.impl.BufferImpl;
 import io.vertx.core.http.HttpMethod;
@@ -18,6 +15,7 @@ import io.vertx.ext.web.RoutingContext;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Matchers;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.swisspush.reststorage.mocks.*;
@@ -67,6 +65,133 @@ public class RestStorageHandlerTest {
         when(request.resume()).thenReturn(request);
         when(request.response()).thenReturn(response);
         when(request.headers()).thenReturn(new HeadersMultiMap());
+    }
+
+    @Test
+    public void testInvalidAuthenticationConfiguration(TestContext testContext) {
+
+        // test with missing password
+        ModuleConfiguration config = new ModuleConfiguration().prefix("/")
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerUsername("foo");
+
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+
+        // ARRANGE
+        when(request.headers()).thenReturn(new HeadersMultiMap());
+
+        // ACT
+        restStorageHandler.handle(request);
+
+        // ASSERT
+        verify(response, times(1)).setStatusCode(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusCode()));
+        verify(response, times(1)).setStatusMessage(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage()));
+        verify(response, times(1)).end(eq("HTTP API authentication is enabled but credentials are missing"));
+
+        Mockito.reset(response);
+
+        // test with missing username
+        config = new ModuleConfiguration().prefix("/")
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerPassword("bar");
+
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+
+        // ARRANGE
+        when(request.headers()).thenReturn(new HeadersMultiMap());
+
+        // ACT
+        restStorageHandler.handle(request);
+
+        // ASSERT
+        verify(response, times(1)).setStatusCode(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusCode()));
+        verify(response, times(1)).setStatusMessage(eq(StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage()));
+        verify(response, times(1)).end(eq("HTTP API authentication is enabled but credentials are missing"));
+    }
+
+    @Test
+    public void testMissingAuthenticationHeader(TestContext testContext) {
+
+        // test with missing password
+        ModuleConfiguration config = new ModuleConfiguration().prefix("/")
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerUsername("foo")
+                .httpRequestHandlerPassword("bar");
+
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+
+        // ARRANGE
+        when(request.headers()).thenReturn(new HeadersMultiMap());
+
+        // ACT
+        restStorageHandler.handle(request);
+
+        // ASSERT
+        verify(response, times(1)).setStatusCode(eq(StatusCode.UNAUTHORIZED.getStatusCode()));
+    }
+
+    @Test
+    public void testCorrectAuthenticationHeader(TestContext testContext) {
+
+        // test with missing password
+        ModuleConfiguration config = new ModuleConfiguration().prefix("/")
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerUsername("foo")
+                .httpRequestHandlerPassword("bar");
+
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+
+        // ARRANGE
+        when(request.method()).thenReturn(HttpMethod.GET);
+        when(request.headers()).thenReturn(new HeadersMultiMap().add("Authorization", "Basic Zm9vOmJhcg==")); // base64 of foo:bar
+
+        doAnswer(invocation -> {
+            Handler<Resource> handler = (Handler<Resource>) invocation.getArguments()[4];
+            Resource resource = new Resource();
+            resource.error = false;
+            resource.modified = false; // mock the storage to return a NOT_MODIFIED
+            handler.handle(resource);
+            return null;
+        }).when(storage).get(anyString(), anyString(), anyInt(), anyInt(), Matchers.any());
+
+        // ACT
+        restStorageHandler.handle(request);
+
+        // ASSERT
+        verify(response, times(1)).setStatusCode(eq(StatusCode.NOT_MODIFIED.getStatusCode()));
+        verify(response, times(1)).setStatusMessage(eq(StatusCode.NOT_MODIFIED.getStatusMessage()));
+    }
+
+    @Test
+    public void testWrongAuthenticationHeader(TestContext testContext) {
+
+        // test with missing password
+        ModuleConfiguration config = new ModuleConfiguration().prefix("/")
+                .httpRequestHandlerAuthenticationEnabled(true)
+                .httpRequestHandlerUsername("foo")
+                .httpRequestHandlerPassword("bar");
+
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+
+        // ARRANGE
+        when(request.method()).thenReturn(HttpMethod.GET);
+        when(request.headers()).thenReturn(new HeadersMultiMap().add("Authorization", "Basic Zm9vOndyb25n")); // base64 of foo:wrong
+
+        doAnswer(invocation -> {
+            Handler<Resource> handler = (Handler<Resource>) invocation.getArguments()[4];
+            Resource resource = new Resource();
+            resource.error = false;
+            resource.modified = false; // mock the storage to return a NOT_MODIFIED
+            handler.handle(resource);
+            return null;
+        }).when(storage).get(anyString(), anyString(), anyInt(), anyInt(), Matchers.any());
+
+        // ACT
+        restStorageHandler.handle(request);
+
+        // ASSERT
+        verify(response, times(1)).setStatusCode(eq(StatusCode.UNAUTHORIZED.getStatusCode()));
+        verifyZeroInteractions(storage); // storage should not be used because failed authentication should answer before accessing storage
     }
 
     @Test

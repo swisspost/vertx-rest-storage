@@ -123,6 +123,8 @@ public class ModuleConfigurationTest {
         testContext.assertNull(json.getJsonObject("editorConfig"));
         testContext.assertEquals(json.getString("redisHost"), "localhost");
         testContext.assertEquals(json.getInteger("redisPort"), 6379);
+        testContext.assertEquals(json.getInteger("redisReconnectAttempts"), 0);
+        testContext.assertEquals(json.getInteger("redisReconnectDelaySec"), 30);
         testContext.assertEquals(json.getInteger("maxRedisWaitingHandlers"), 2048);
         testContext.assertNull(json.getString("redisAuth"));
         testContext.assertEquals(json.getString("expirablePrefix"), "rest-storage:expirable");
@@ -138,11 +140,13 @@ public class ModuleConfigurationTest {
     }
 
     @Test
-    public void testGetOverridenAsJsonObject(TestContext testContext){
+    public void testGetOverriddenAsJsonObject(TestContext testContext){
 
         ModuleConfiguration config = new ModuleConfiguration()
                 .redisHost("anotherhost")
                 .redisPort(1234)
+                .redisReconnectAttempts(-1)
+                .redisReconnectDelaySec(0)
                 .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
@@ -173,9 +177,11 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getString("lockPrefix"), "rest-storage:locks");
 
 
-        // overriden values
+        // overridden values
         testContext.assertEquals(json.getString("redisHost"), "anotherhost");
         testContext.assertEquals(json.getInteger("redisPort"), 1234);
+        testContext.assertEquals(json.getInteger("redisReconnectAttempts"), -1);
+        testContext.assertEquals(json.getInteger("redisReconnectDelaySec"), 1);
         testContext.assertTrue(json.getBoolean("confirmCollectionDelete"));
         testContext.assertTrue(json.getBoolean("rejectStorageWriteOnLowMemory"));
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 5000L);
@@ -198,6 +204,8 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRoot(), ".");
         testContext.assertEquals(config.getStorageType(), StorageType.filesystem);
         testContext.assertEquals(config.getPort(), 8989);
+        testContext.assertEquals(config.getRedisReconnectAttempts(), 0);
+        testContext.assertEquals(config.getRedisReconnectDelaySec(), 30);
         testContext.assertEquals(config.getPrefix(), "");
         testContext.assertEquals(config.getStorageAddress(), "resource-storage");
         testContext.assertNull(config.getEditorConfig());
@@ -221,12 +229,14 @@ public class ModuleConfigurationTest {
     }
 
     @Test
-    public void testGetOverridenFromJsonObject(TestContext testContext){
+    public void testGetOverriddenFromJsonObject(TestContext testContext){
 
         JsonObject json = new JsonObject();
         json.put("root", "newroot");
         json.put("storageType", "redis");
         json.put("port", 1234);
+        json.put("redisReconnectAttempts", 15);
+        json.put("redisReconnectDelaySec", -5);
         json.put("httpRequestHandlerEnabled", false);
         json.put("httpRequestHandlerAuthenticationEnabled", true);
         json.put("httpRequestHandlerUsername", "foo");
@@ -252,6 +262,8 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRoot(), "newroot");
         testContext.assertEquals(config.getStorageType(), StorageType.redis);
         testContext.assertEquals(config.getPort(), 1234);
+        testContext.assertEquals(config.getRedisReconnectAttempts(), 15);
+        testContext.assertEquals(config.getRedisReconnectDelaySec(), 1);
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
         testContext.assertEquals(config.getHttpRequestHandlerUsername(), "foo");

@@ -28,6 +28,8 @@ public class ModuleConfiguration {
     private String redisHost = "localhost";
     private int redisPort = 6379;
     private String redisAuth = null;
+    private int redisReconnectAttempts = 0;
+    private int redisReconnectDelaySec = 30;
     private String expirablePrefix = "rest-storage:expirable";
     private String resourcesPrefix = "rest-storage:resources";
     private String collectionsPrefix = "rest-storage:collections";
@@ -106,6 +108,16 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisPort(int redisPort) {
         this.redisPort = redisPort;
+        return this;
+    }
+
+    public ModuleConfiguration redisReconnectAttempts(int redisReconnectAttempts) {
+        this.redisReconnectAttempts = redisReconnectAttempts;
+        return this;
+    }
+
+    public ModuleConfiguration redisReconnectDelaySec(int redisReconnectDelaySec) {
+        this.redisReconnectDelaySec = redisReconnectDelaySec;
         return this;
     }
 
@@ -230,6 +242,14 @@ public class ModuleConfiguration {
 
     public int getRedisPort() {
         return redisPort;
+    }
+
+    public int getRedisReconnectAttempts() {
+        return redisReconnectAttempts;
+    }
+
+    public int getRedisReconnectDelaySec() {
+        return Math.max(redisReconnectDelaySec, 1);
     }
 
     public String getRedisAuth() {

@@ -5,9 +5,6 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import io.vertx.redis.client.Redis;
-import io.vertx.redis.client.RedisAPI;
-import io.vertx.redis.client.RedisOptions;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 public class RestStorageMod extends AbstractVerticle {
@@ -53,7 +50,13 @@ public class RestStorageMod extends AbstractVerticle {
                 promise.complete(new FileSystemStorage(vertx, moduleConfiguration.getRoot()));
                 break;
             case redis:
-                createRedisStorage(vertx, moduleConfiguration, promise);
+                createRedisStorage(vertx, moduleConfiguration).onComplete(event -> {
+                    if(event.succeeded()){
+                        promise.complete(event.result());
+                    } else {
+                        promise.fail(event.cause());
+                    }
+                });
                 break;
             default:
                 promise.fail(new RuntimeException("Storage not supported: " + moduleConfiguration.getStorageType()));
@@ -62,19 +65,10 @@ public class RestStorageMod extends AbstractVerticle {
         return promise.future();
     }
 
-    private void createRedisStorage(Vertx vertx, ModuleConfiguration moduleConfiguration, Promise<Storage> promise) {
-        Redis.createClient(vertx, new RedisOptions()
-                .setConnectionString("redis://" + moduleConfiguration.getRedisHost() + ":" + moduleConfiguration.getRedisPort())
-                .setPassword((moduleConfiguration.getRedisAuth() == null ? "" : moduleConfiguration.getRedisAuth()))
-                .setMaxPoolSize(moduleConfiguration.getMaxRedisConnectionPoolSize())
-                .setMaxPoolWaiting(moduleConfiguration.getMaxQueueWaiting())
-                .setMaxWaitingHandlers(moduleConfiguration.getMaxRedisWaitingHandlers())
-        ).connect(redisConnectionEvent -> {
-            if (redisConnectionEvent.failed()) {
-                promise.fail(redisConnectionEvent.cause());
-            } else {
-                promise.complete(new RedisStorage(vertx, moduleConfiguration, RedisAPI.api(redisConnectionEvent.result())));
-            }
-        });
+    private Future<RedisStorage> createRedisStorage(Vertx vertx, ModuleConfiguration moduleConfiguration) {
+        Promise<RedisStorage> initPromise = Promise.promise();
+        RedisAPIProvider apiProvider = new RedisAPIProvider(vertx, moduleConfiguration);
+        apiProvider.redisAPI().onComplete(event -> initPromise.complete(new RedisStorage(vertx, moduleConfiguration, apiProvider)));
+        return initPromise.future();
     }
 }

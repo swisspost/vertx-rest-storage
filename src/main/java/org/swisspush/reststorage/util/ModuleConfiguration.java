@@ -1,6 +1,8 @@
 package org.swisspush.reststorage.util;
 
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -10,6 +12,8 @@ import java.util.Map;
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
 public class ModuleConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(ModuleConfiguration.class);
 
     public enum StorageType {
         filesystem, redis
@@ -249,7 +253,11 @@ public class ModuleConfiguration {
     }
 
     public int getRedisReconnectDelaySec() {
-        return Math.max(redisReconnectDelaySec, 1);
+        if (redisReconnectDelaySec < 1) {
+            log.debug("Ignoring value {}s for redisReconnectDelay (too small) and use 1 instead", redisReconnectDelaySec);
+            return 1;
+        }
+        return redisReconnectDelaySec;
     }
 
     public String getRedisAuth() {

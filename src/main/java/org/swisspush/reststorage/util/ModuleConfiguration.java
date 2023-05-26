@@ -1,6 +1,8 @@
 package org.swisspush.reststorage.util;
 
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -10,6 +12,8 @@ import java.util.Map;
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
 public class ModuleConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(ModuleConfiguration.class);
 
     public enum StorageType {
         filesystem, redis
@@ -28,6 +32,8 @@ public class ModuleConfiguration {
     private String redisHost = "localhost";
     private int redisPort = 6379;
     private String redisAuth = null;
+    private int redisReconnectAttempts = 0;
+    private int redisReconnectDelaySec = 30;
     private String expirablePrefix = "rest-storage:expirable";
     private String resourcesPrefix = "rest-storage:resources";
     private String collectionsPrefix = "rest-storage:collections";
@@ -106,6 +112,16 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisPort(int redisPort) {
         this.redisPort = redisPort;
+        return this;
+    }
+
+    public ModuleConfiguration redisReconnectAttempts(int redisReconnectAttempts) {
+        this.redisReconnectAttempts = redisReconnectAttempts;
+        return this;
+    }
+
+    public ModuleConfiguration redisReconnectDelaySec(int redisReconnectDelaySec) {
+        this.redisReconnectDelaySec = redisReconnectDelaySec;
         return this;
     }
 
@@ -230,6 +246,18 @@ public class ModuleConfiguration {
 
     public int getRedisPort() {
         return redisPort;
+    }
+
+    public int getRedisReconnectAttempts() {
+        return redisReconnectAttempts;
+    }
+
+    public int getRedisReconnectDelaySec() {
+        if (redisReconnectDelaySec < 1) {
+            log.debug("Ignoring value {}s for redisReconnectDelay (too small) and use 1 instead", redisReconnectDelaySec);
+            return 1;
+        }
+        return redisReconnectDelaySec;
     }
 
     public String getRedisAuth() {

@@ -7,9 +7,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.ReadStream;
 import io.vertx.core.streams.WriteStream;
-import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.Response;
-import io.vertx.redis.client.impl.RedisClient;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.text.StrSubstitutor;
@@ -46,17 +44,13 @@ public class RedisStorage implements Storage {
     private String redisLockPrefix;
     private Vertx vertx;
 
-    private RedisAPI redisAPI;
+    private RedisAPIProvider redisAPIProvider;
     private Map<LuaScript, LuaScriptState> luaScripts = new HashMap<>();
     private DecimalFormat decimalFormat;
 
     private Optional<Float> currentMemoryUsageOptional = Optional.empty();
 
-    public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisClient redisClient) {
-        this(vertx, config, RedisAPI.api(redisClient));
-    }
-
-    public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisAPI redisAPI) {
+    public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisAPIProvider redisAPIProvider) {
         this.expirableSet = config.getExpirablePrefix();
         this.redisResourcesPrefix = config.getResourcesPrefix();
         this.redisCollectionsPrefix = config.getCollectionsPrefix();
@@ -66,7 +60,7 @@ public class RedisStorage implements Storage {
         this.redisLockPrefix = config.getLockPrefix();
 
         this.vertx = vertx;
-        this.redisAPI = redisAPI;
+        this.redisAPIProvider = redisAPIProvider;
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);
 
@@ -103,7 +97,8 @@ public class RedisStorage implements Storage {
 
     public Future<Optional<Float>> calculateCurrentMemoryUsage() {
         Promise<Optional<Float>> promise = Promise.promise();
-        redisAPI.info(Collections.singletonList("memory"), memoryInfo -> {
+
+        redisAPIProvider.redisAPI().onSuccess(redisAPI -> redisAPI.info(Collections.singletonList("memory"), memoryInfo -> {
             if (memoryInfo.failed()) {
                 log.error("Unable to get memory information from redis", memoryInfo.cause());
                 promise.complete(Optional.empty());
@@ -160,7 +155,8 @@ public class RedisStorage implements Storage {
             }
             log.info("Current memory usage is {}%", decimalFormat.format(currentMemoryUsagePercentage));
             promise.complete(Optional.of(currentMemoryUsagePercentage));
-        });
+        }));
+
         return promise.future();
     }
 
@@ -273,35 +269,37 @@ public class RedisStorage implements Storage {
         public void loadLuaScript(final RedisCommand redisCommand, int executionCounter) {
             final int executionCounterIncr = ++executionCounter;
 
-            // check first if the lua script already exists in the store
-            redisAPI.script(Arrays.asList("exists", this.sha), resultArray -> {
-                if (resultArray.failed()) {
-                    log.error("Error checking whether lua script exists", resultArray.cause());
-                    return;
-                }
-                Long exists = resultArray.result().get(0).toLong();
-                // if script already
-                if (Long.valueOf(1).equals(exists)) {
-                    log.debug("RedisStorage script already exists in redis cache: " + luaScriptType);
-                    redisCommand.exec(executionCounterIncr);
-                } else {
-                    log.info("load lua script for script type: {} logoutput: {}", luaScriptType, logoutput);
-                    redisAPI.script(Arrays.asList("load", script), stringAsyncResult -> {
-                        if (stringAsyncResult.failed()) {
-                            log.error("Loading of lua script {} failed", luaScriptType);
-                            return;
-                        }
-                        String newSha = stringAsyncResult.result().toString();
-                        log.info("got sha from redis for lua script: {}: {}", luaScriptType, newSha);
-                        if (!newSha.equals(sha)) {
-                            log.warn("the sha calculated by myself: {} doesn't match with the sha from redis: {}. " +
-                                    "We use the sha from redis", sha, newSha);
-                        }
-                        sha = newSha;
-                        log.info("execute redis command for script type: {} with new sha: {}", luaScriptType, sha);
+            redisAPIProvider.redisAPI().onSuccess(redisAPI -> {
+                // check first if the lua script already exists in the store
+                redisAPI.script(Arrays.asList("exists", sha), resultArray -> {
+                    if (resultArray.failed()) {
+                        log.error("Error checking whether lua script exists", resultArray.cause());
+                        return;
+                    }
+                    Long exists = resultArray.result().get(0).toLong();
+                    // if script already
+                    if (Long.valueOf(1).equals(exists)) {
+                        log.debug("RedisStorage script already exists in redis cache: " + luaScriptType);
                         redisCommand.exec(executionCounterIncr);
-                    });
-                }
+                    } else {
+                        log.info("load lua script for script type: {} logoutput: {}", luaScriptType, logoutput);
+                        redisAPI.script(Arrays.asList("load", script), stringAsyncResult -> {
+                            if (stringAsyncResult.failed()) {
+                                log.error("Loading of lua script {} failed", luaScriptType);
+                                return;
+                            }
+                            String newSha = stringAsyncResult.result().toString();
+                            log.info("got sha from redis for lua script: {}: {}", luaScriptType, newSha);
+                            if (!newSha.equals(sha)) {
+                                log.warn("the sha calculated by myself: {} doesn't match with the sha from redis: {}. " +
+                                        "We use the sha from redis", sha, newSha);
+                            }
+                            sha = newSha;
+                            log.info("execute redis command for script type: {} with new sha: {}", luaScriptType, sha);
+                            redisCommand.exec(executionCounterIncr);
+                        });
+                    }
+                });
             });
         }
 
@@ -486,7 +484,7 @@ public class RedisStorage implements Storage {
 
         public void exec(final int executionCounter) {
             List<String> args = toPayload(luaScripts.get(LuaScript.GET).getSha(), keys.size(), keys, arguments);
-            redisAPI.evalsha(args, event -> {
+            redisAPIProvider.redisAPI().onSuccess(redisAPI -> redisAPI.evalsha(args, event -> {
                 if (event.succeeded()) {
                     Response values = event.result();
                     if (log.isTraceEnabled()) {
@@ -513,7 +511,7 @@ public class RedisStorage implements Storage {
                         log.error("GET request failed with message: {}", message);
                     }
                 }
-            });
+            }));
         }
     }
 
@@ -554,7 +552,8 @@ public class RedisStorage implements Storage {
 
         public void exec(final int executionCounter) {
             List<String> args = toPayload(luaScripts.get(LuaScript.STORAGE_EXPAND).getSha(), keys.size(), keys, arguments);
-            redisAPI.evalsha(args, event -> {
+
+            redisAPIProvider.redisAPI().onSuccess(redisAPI -> redisAPI.evalsha(args, event -> {
                 if (event.succeeded()) {
                     String value = event.result().toString();
                     if (log.isTraceEnabled()) {
@@ -617,7 +616,7 @@ public class RedisStorage implements Storage {
                         log.error("StorageExpand request failed with message: {}", message);
                     }
                 }
-            });
+            }));
         }
     }
 
@@ -867,7 +866,8 @@ public class RedisStorage implements Storage {
 
         public void exec(final int executionCounter) {
             List<String> args = toPayload(luaScripts.get(LuaScript.PUT).getSha(), keys.size(), keys, arguments);
-            redisAPI.evalsha(args, event -> {
+
+            redisAPIProvider.redisAPI().onSuccess(redisAPI -> redisAPI.evalsha(args, event -> {
                 if (event.succeeded()) {
                     String result = event.result().toString();
                     if (log.isTraceEnabled()) {
@@ -902,7 +902,7 @@ public class RedisStorage implements Storage {
                         d.errorHandler.handle(event.cause());
                     }
                 }
-            });
+            }));
         }
     }
 
@@ -951,7 +951,8 @@ public class RedisStorage implements Storage {
 
         public void exec(final int executionCounter) {
             List<String> args = toPayload(luaScripts.get(LuaScript.DELETE).getSha(), keys.size(), keys, arguments);
-            redisAPI.evalsha(args, event -> {
+
+            redisAPIProvider.redisAPI().onSuccess(redisAPI -> redisAPI.evalsha(args, event -> {
                 if (event.cause() != null && event.cause().getMessage().startsWith("NOSCRIPT")) {
                     log.warn("delete script couldn't be found, reload it");
                     log.warn("amount the script got loaded: {}", executionCounter);
@@ -983,7 +984,7 @@ public class RedisStorage implements Storage {
                 }
                 Resource r = new Resource();
                 handler.handle(r);
-            });
+            }));
         }
     }
 
@@ -1011,7 +1012,8 @@ public class RedisStorage implements Storage {
                 String.valueOf(bulkSize)
         );
         List<String> args = toPayload(luaScripts.get(LuaScript.CLEANUP).getSha(), 0, Collections.emptyList(), arguments);
-        redisAPI.evalsha(args, event -> {
+
+        redisAPIProvider.redisAPI().onSuccess(redisAPI -> redisAPI.evalsha(args, event -> {
             if (log.isTraceEnabled()) {
                 log.trace("RedisStorage cleanup resources succeeded: {}", event.succeeded());
             }
@@ -1058,7 +1060,7 @@ public class RedisStorage implements Storage {
                     handler.handle(r);
                 });
             }
-        });
+        }));
     }
 
     private String encodePath(String path) {

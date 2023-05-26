@@ -60,7 +60,7 @@ public class FilePutter {
         final FileSystem fileSystem = vertx.fileSystem();
         this.executed = true;
         // Setup required context.
-        this.tmpFileVirtualPath = "/.tmp/uploads/" + new File(realPath).getName() + "-" + UUID.randomUUID().toString() + ".part";
+        this.tmpFileVirtualPath = "/.tmp/uploads/" + new File(realPath).getName() + "-" + UUID.randomUUID() + ".part";
         this.tmpFileRealPath = canonicalizeVirtualPath(tmpFileVirtualPath);
         this.tmpFileParentRealPath = new File(tmpFileRealPath).getParent();
         // Prepare directory for temporary file.

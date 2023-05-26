@@ -1,6 +1,7 @@
 package org.swisspush.reststorage;
 
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -36,12 +37,16 @@ import static org.mockito.Mockito.when;
 public class RedisStorageTest {
 
     private RedisAPI redisAPI;
+    private RedisAPIProvider redisAPIProvider;
     private RedisStorage storage;
 
     @Before
     public void setUp(TestContext context) {
         redisAPI = Mockito.mock(RedisAPI.class);
-        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisAPI);
+        redisAPIProvider = Mockito.mock(RedisAPIProvider.class);
+        when(redisAPIProvider.redisAPI()).thenReturn(Future.succeededFuture(redisAPI));
+
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisAPIProvider);
     }
 
 

@@ -2,17 +2,16 @@
 
 [![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
 [![codecov](https://codecov.io/gh/swisspost/vertx-rest-storage/branch/master/graph/badge.svg?token=ufyTWmGbC6)](https://codecov.io/gh/swisspost/vertx-rest-storage)
-[![Java CI with Maven](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml/badge.svg?event=issues)](https://github.com/swisspost/vertx-rest-storage/actions/workflows/maven.yml)
-[![GitHub contributors](https://img.shields.io/github/contributors/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
+[![GitHub contributors](https://img.shields.io/github/contributors/swisspost/vertx-rest-storage)](https://github.com/swisspost/vertx-rest-storage/graphs/contributors)
 
-[![GitHub release](https://img.shields.io/github/release/swisspost/rest-storage.svg)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/swisspost/vertx-rest-storage)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
 [![Maven Central](https://img.shields.io/maven-central/v/org.swisspush/rest-storage.svg)]()
 
 Persistence for REST resources in the filesystem or a redis database. 
 
 Stores resources in a hierarchical way according to their URI. It actually implements a generic CRUD REST service.
 
-It uses usual mime mapping to determine content type so you can also use it as a web server. Without extension, JSON is assumed.
+It uses usual mime mapping to determine content type, so you can also use it as a web server. Without extension, JSON is assumed.
 
 The following methods are supported on leaves (documents):
 * GET: Returns the content of the resource.
@@ -48,23 +47,23 @@ Invoking GET request on a collection returns a list of collection members.
 
 #### Parameters
 
-| Parameter | Description  |
-|:--------- | :----------- |
-| limit | defines the amount of returned resources |
-| offset | defines the amount of resources to skip. Can be used in combination with limit to provide pageing functionality |
+| Parameter | Description                                                                                                     |
+|:----------|:----------------------------------------------------------------------------------------------------------------|
+| limit     | defines the amount of returned resources                                                                        |
+| offset    | defines the amount of resources to skip. Can be used in combination with limit to provide paging functionality |
 
 ##### Examples
 Given a collection of ten items (res1-res10) under the path /server/tests/offset/resources/
 
-| Request | Returned items  |
-|:--------- | :----------- |
-| **GET** /server/tests/offset/resources/?limit=10 | all |
-| **GET** /server/tests/offset/resources/?limit=99 | all |
-| **GET** /server/tests/offset/resources/?limit=5 | res1,res10,res2,res3,res4 |
-| **GET** /server/tests/offset/resources/?offset=2 | res2,res3,res4,res5,res6,res7,res8,res9 |
-| **GET** /server/tests/offset/resources/?offset=11 | no items (empty array) |
-| **GET** /server/tests/offset/resources/?offset=2&limit=-1 | res2,res3,res4,res5,res6,res7,res8,res9 |
-| **GET** /server/tests/offset/resources/?offset=0&limit=3 | res1,res10,res2 |
+| Request                                                   | Returned items                                |
+|:----------------------------------------------------------|:----------------------------------------------|
+| **GET** /server/tests/offset/resources/?limit=10          | all                                           |
+| **GET** /server/tests/offset/resources/?limit=99          | all                                           |
+| **GET** /server/tests/offset/resources/?limit=5           | res1,res10,res2,res3,res4                     |
+| **GET** /server/tests/offset/resources/?offset=2          | res2,res3,res4,res5,res6,res7,res8,res9       |
+| **GET** /server/tests/offset/resources/?offset=11         | no items (empty array)                        |
+| **GET** /server/tests/offset/resources/?offset=2&limit=-1 | res2,res3,res4,res5,res6,res7,res8,res9       |
+| **GET** /server/tests/offset/resources/?offset=0&limit=3  | res1,res10,res2                               |
 | **GET** /server/tests/offset/resources/?offset=1&limit=10 | res10,res2,res3,res4,res5,res6,res7,res8,res9 |
 
 The returned json response look like this:
@@ -85,13 +84,13 @@ The returned json response look like this:
 Invoking DELETE request on a leave (document) deletes the resource.
 > DELETE /storage/resources/resource_1
 
-Invoking DELETE request on a collection deletes the collection and all its childern.
+Invoking DELETE request on a collection deletes the collection and all its children.
 > DELETE /storage/resources/
 
 #### Parameters
 
-| Parameter | Description  |
-|:--------- | :----------- |
+| Parameter | Description                                                                                                                                       |
+|:----------|:--------------------------------------------------------------------------------------------------------------------------------------------------|
 | recursive | When configuration property _confirmCollectionDelete_ is set to _true_, the url parameter _recursive=true_ has to be added to delete collections. |
 
 ### StorageExpand
@@ -125,8 +124,8 @@ would lead to this result
     
 ##### Usage
 
-To use the StorageExpand feature you have to make a POST request to the desired collection to expand having the url paramter **storageExpand=true**. Also you wil have
-to send the names of the subresources in the body of the request. Using the example above, the request would look like this:
+To use the StorageExpand feature you have to make a POST request to the desired collection to expand having the url parameter **storageExpand=true**. Also, you wil have
+to send the names of the sub resources in the body of the request. Using the example above, the request would look like this:
 
 **POST /yourStorageURL/collection** with the body:
 ```json
@@ -158,15 +157,15 @@ The higher the _x-importance-level_ value, the more important the request. When 
 The lock mechanism allows you to lock a resource for a specified time. This way only the owner of the lock is able to write or delete the given resource.
 To lock a resource, you have to add the following headers to your PUT / DELETE request.
 
-| Headers | Type | Default value | Description |
-|:------- | :--- | :------------ | :---------- |
-|x-lock | String | | The owner of the lock. |
-|x-lock-mode | silent | **silent** | Any PUT or DELETE performed on this resource without the valid owner will have no effect and get *200 OK* back.  |
-|             | reject |  | Any PUT or DELETE performed on this resource without the valid owner will have no effect and get *409 Conflict* back. |
-|x-lock-expire-after | long | **300** | Defines the lock lifetime. The default value is set to *300* seconds.  |
-|x-expire-after | long | | Defines the lifetime of a resource  |
+| Headers             | Type   | Default value | Description                                                                                                           |
+|:--------------------|:-------|:--------------|:----------------------------------------------------------------------------------------------------------------------|
+| x-lock              | String |               | The owner of the lock.                                                                                                |
+| x-lock-mode         | silent | **silent**    | Any PUT or DELETE performed on this resource without the valid owner will have no effect and get *200 OK* back.       |
+|                     | reject |               | Any PUT or DELETE performed on this resource without the valid owner will have no effect and get *409 Conflict* back. |
+| x-lock-expire-after | long   | **300**       | Defines the lock lifetime. The default value is set to *300* seconds.                                                 |
+| x-expire-after      | long   |               | Defines the lifetime of a resource                                                                                    |
 
-`Warning:` The lock will be always removed if you perform a DELETE on a collection containing a locked resource. There is no check for locks in collections.
+`Warning:` The lock will always be removed if you perform a DELETE on a collection containing a locked resource. There is no check for locks in collections.
 
 ### Store data compressed
 In order to optimize the memory usage when using the redis storage, it's possible to store resources compressed using
@@ -189,30 +188,32 @@ The data compression feature is not compatible with all vertx-rest-storage featu
 
 The following configuration values are available:
 
-| Property | Type | Default value            | Description                                                                                              | 
-|:--------- | :----------- |:-------------------------|:---------------------------------------------------------------------------------------------------------|
-| root | common | .                        | The prefix for the directory or redis key                                                                |
-| storageType | common | filesystem               | The storage implementation to use. Choose between filesystem or redis                                    |
-| port | common | 8989                     | The port the mod listens to when HTTP API is enabled.                                                    |
-| httpRequestHandlerEnabled | common | true                     | When set to _false_, the storage is accessible throught the event bus only.                              |
-| httpRequestHandlerAuthenticationEnabled | common | false                    | Enable / disable authentication for the HTTP API                                                         |
-| httpRequestHandlerUsername | common |                     | The username for the HTTP API authentication                                                             |
-| httpRequestHandlerPassword | common |                     | The password for the HTTP API authentication                                                             |
-| prefix | common | /                        | The part of the URL path before this handler (aka "context path" in JEE terminology)                     |
-| storageAddress | common | resource-storage         | The eventbus address the mod listens to.                                                                 |
-| editorConfig | common |                          | Additional configuration values for the editor                                                           |
-| confirmCollectionDelete | common | false                    | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections     |
-| redisHost | redis | localhost                | The host where redis is running on                                                                       |
-| redisPort | redis | 6379                     | The port where redis is running on                                                                       |
-| expirablePrefix | redis | rest-storage:expirable   | The prefix for expirable data redis keys                                                                 |
-| resourcesPrefix | redis | rest-storage:resources   | The prefix for resources redis keys                                                                      |
-| collectionsPrefix | redis | rest-storage:collections | The prefix for collections redis keys                                                                    |
-| deltaResourcesPrefix | redis | delta:resources          | The prefix for delta resources redis keys                                                                |
-| deltaEtagsPrefix | redis | delta:etags              | The prefix for delta etags redis keys                                                                    |
-| lockPrefix | redis | rest-storage:locks       | The prefix for lock redis keys                                                                           |
-| resourceCleanupAmount | redis | 100000                   | The maximum amount of resources to clean in a single cleanup run                                         |
-| rejectStorageWriteOnLowMemory | redis | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low |
-| freeMemoryCheckIntervalMs | redis | 60000                    | The interval in milliseconds to calculate the actual memory usage                                        |
+| Property                                | Type   | Default value            | Description                                                                                                                           | 
+|:----------------------------------------|:-------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
+| root                                    | common | .                        | The prefix for the directory or redis key                                                                                             |
+| storageType                             | common | filesystem               | The storage implementation to use. Choose between filesystem or redis                                                                 |
+| port                                    | common | 8989                     | The port the mod listens to when HTTP API is enabled.                                                                                 |
+| httpRequestHandlerEnabled               | common | true                     | When set to _false_, the storage is accessible throught the event bus only.                                                           |
+| httpRequestHandlerAuthenticationEnabled | common | false                    | Enable / disable authentication for the HTTP API                                                                                      |
+| httpRequestHandlerUsername              | common |                          | The username for the HTTP API authentication                                                                                          |
+| httpRequestHandlerPassword              | common |                          | The password for the HTTP API authentication                                                                                          |
+| prefix                                  | common | /                        | The part of the URL path before this handler (aka "context path" in JEE terminology)                                                  |
+| storageAddress                          | common | resource-storage         | The eventbus address the mod listens to.                                                                                              |
+| editorConfig                            | common |                          | Additional configuration values for the editor                                                                                        |
+| confirmCollectionDelete                 | common | false                    | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections                                  |
+| redisHost                               | redis  | localhost                | The host where redis is running on                                                                                                    |
+| redisPort                               | redis  | 6379                     | The port where redis is running on                                                                                                    |
+| redisReconnectAttempts                  | redis  | 0                        | The amount of reconnect attempts when connection to redis is lost. Use _-1_ for continuous reconnects or _0_ for no reconnects at all |
+| redisReconnectDelaySec                  | redis  | 30                       | The delay (in seconds) between each reconnect attempt                                                                                 |
+| expirablePrefix                         | redis  | rest-storage:expirable   | The prefix for expirable data redis keys                                                                                              |
+| resourcesPrefix                         | redis  | rest-storage:resources   | The prefix for resources redis keys                                                                                                   |
+| collectionsPrefix                       | redis  | rest-storage:collections | The prefix for collections redis keys                                                                                                 |
+| deltaResourcesPrefix                    | redis  | delta:resources          | The prefix for delta resources redis keys                                                                                             |
+| deltaEtagsPrefix                        | redis  | delta:etags              | The prefix for delta etags redis keys                                                                                                 |
+| lockPrefix                              | redis  | rest-storage:locks       | The prefix for lock redis keys                                                                                                        |
+| resourceCleanupAmount                   | redis  | 100000                   | The maximum amount of resources to clean in a single cleanup run                                                                      |
+| rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
+| freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
 
 ### Configuration util
 
@@ -230,7 +231,7 @@ ModuleConfiguration config = with()
 JsonObject json = config.asJsonObject();
 ```
 
-Properties not overriden will not be changed. Thus remaining default.
+Properties not overridden will not be changed. Thus remaining default.
 
 To use default values only, the _ModuleConfiguration_ constructor without parameters can be used:
 
@@ -239,13 +240,14 @@ JsonObject json  = new ModuleConfiguration().asJsonObject();
 ```
 
 ## Storage types
-Currently there are two storage types supported. File system storage and redis storage.
+Currently, there are two storage types supported. File system storage and redis storage.
+
 ### File System Storage
-The data is stored hierarchically on the file system. This is the default storage type when not overriden in the configuration.
+The data is stored hierarchically on the file system. This is the default storage type when not overridden in the configuration.
 
 ### Redis Storage
 The data is stored in a redis database.
-Caution: The redis storage implementation does not currently support streaming. Avoid transfering too big payloads since they will be entirely copied in memory.
+Caution: The redis storage implementation does not currently support streaming. Avoid transferring too big payloads since they will be entirely copied in memory.
 
 ## Dependencies
 - Starting from 2.6.x rest-storage requires **Java 11**.

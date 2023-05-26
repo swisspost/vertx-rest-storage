@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class RedisAPIProvider {
 
-    private Vertx vertx;
+    private final Vertx vertx;
     private final ModuleConfiguration moduleConfiguration;
     private RedisAPI redisAPI;
 
@@ -26,7 +26,7 @@ public class RedisAPIProvider {
     private final AtomicBoolean CONNECTING = new AtomicBoolean();
     private RedisConnection client;
 
-    private Logger log = LoggerFactory.getLogger(RedisAPIProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(RedisAPIProvider.class);
 
     private final int redisReconnectAttempts;
     private final int redisReconnectDelaySec;
@@ -104,11 +104,11 @@ public class RedisAPIProvider {
     }
 
     private void attemptReconnect(int retry) {
-        log.info("About to reconnect to redis with attempt #" + retry);
+        log.info("About to reconnect to redis with attempt #{}", retry);
         if(redisReconnectAttempts < 0) {
             doReconnect(retry);
         } else if (retry > redisReconnectAttempts) {
-            log.warn("Not reconnecting anymore since max reconnect attempts are reached");
+            log.warn("Not reconnecting anymore since max reconnect attempts ({}) are reached", redisReconnectAttempts);
             CONNECTING.set(false);
         } else {
             doReconnect(retry);
@@ -117,7 +117,7 @@ public class RedisAPIProvider {
 
     private void doReconnect(int retry) {
         long backoffMs = (long) (Math.pow(2, Math.min(retry, 10)) * redisReconnectDelaySec);
-
+        log.debug("Schedule reconnect #{} in {}ms.", retry, backoffMs);
         vertx.setTimer(backoffMs, timer -> createRedisClient()
                 .onFailure(t -> attemptReconnect(retry + 1)));
     }

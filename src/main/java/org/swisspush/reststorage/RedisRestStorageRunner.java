@@ -17,7 +17,7 @@ public class RedisRestStorageRunner {
                 .storageType(ModuleConfiguration.StorageType.redis)
                 .redisReconnectAttempts(-1);
 
-        Vertx.vertx().deployVerticle("org.swisspush.reststorage.RestStorageMod", new DeploymentOptions().setConfig(modConfig.asJsonObject()), event ->
-                LoggerFactory.getLogger(RestStorageMod.class).info("rest-storage started"));
+        Vertx.vertx().deployVerticle(new RestStorageMod(), new DeploymentOptions().setConfig(modConfig.asJsonObject()), event ->
+                LoggerFactory.getLogger(RedisRestStorageRunner.class).info("rest-storage started"));
     }
 }

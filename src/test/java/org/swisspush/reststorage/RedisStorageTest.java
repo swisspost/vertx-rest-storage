@@ -37,16 +37,16 @@ import static org.mockito.Mockito.when;
 public class RedisStorageTest {
 
     private RedisAPI redisAPI;
-    private RedisAPIProvider redisAPIProvider;
+    private RedisProvider redisProvider;
     private RedisStorage storage;
 
     @Before
     public void setUp(TestContext context) {
         redisAPI = Mockito.mock(RedisAPI.class);
-        redisAPIProvider = Mockito.mock(RedisAPIProvider.class);
-        when(redisAPIProvider.redisAPI()).thenReturn(Future.succeededFuture(redisAPI));
+        redisProvider = Mockito.mock(RedisProvider.class);
+        when(redisProvider.redis()).thenReturn(Future.succeededFuture(redisAPI));
 
-        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisAPIProvider);
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider);
     }
 
 

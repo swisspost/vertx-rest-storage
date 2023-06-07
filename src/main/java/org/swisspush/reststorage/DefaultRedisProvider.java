@@ -10,6 +10,11 @@ import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Default implementation for a Provider for {@link RedisAPI}
+ *
+ * @author https://github.com/mcweba [Marc-Andre Weber]
+ */
 public class DefaultRedisProvider implements RedisProvider {
 
     private final Vertx vertx;
@@ -41,10 +46,10 @@ public class DefaultRedisProvider implements RedisProvider {
         if( currentPromise == masterPromise ){
             // Our promise is THE promise. So WE have to resolve it.
             connectToRedis().onComplete(event -> {
+                connectPromiseRef.getAndSet(null);
                 if(event.failed()) {
                     currentPromise.fail(event.cause());
                 } else {
-                    connectPromiseRef.getAndSet(null);
                     redisAPI = event.result();
                     currentPromise.complete(redisAPI);
                 }

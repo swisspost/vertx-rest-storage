@@ -11,6 +11,15 @@ public class RestStorageMod extends AbstractVerticle {
 
     private Logger log = LoggerFactory.getLogger(RestStorageMod.class);
 
+    private RedisProvider redisProvider;
+
+    public RestStorageMod() {
+    }
+
+    public RestStorageMod(RedisProvider redisProvider) {
+        this.redisProvider = redisProvider;
+    }
+
     @Override
     public void start(Promise<Void> promise) {
         ModuleConfiguration modConfig = ModuleConfiguration.fromJsonObject(config());
@@ -67,8 +76,19 @@ public class RestStorageMod extends AbstractVerticle {
 
     private Future<RedisStorage> createRedisStorage(Vertx vertx, ModuleConfiguration moduleConfiguration) {
         Promise<RedisStorage> initPromise = Promise.promise();
-        RedisAPIProvider apiProvider = new RedisAPIProvider(vertx, moduleConfiguration);
-        apiProvider.redisAPI().onComplete(event -> initPromise.complete(new RedisStorage(vertx, moduleConfiguration, apiProvider)));
+
+        if(redisProvider == null) {
+            redisProvider = new DefaultRedisProvider(vertx, moduleConfiguration);
+        }
+
+        redisProvider.redis().onComplete(event -> {
+            if(event.succeeded()) {
+                initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider));
+            } else {
+                initPromise.fail(event.cause());
+            }
+        });
+
         return initPromise.future();
     }
 }

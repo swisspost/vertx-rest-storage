@@ -39,7 +39,7 @@ public class ModuleConfigurationTest {
         testContext.assertNull(config.getEditorConfig());
         testContext.assertEquals(config.getRedisHost(), "localhost");
         testContext.assertEquals(config.getRedisPort(), 6379);
-        testContext.assertFalse(config.isRedisEnableTLS());
+        testContext.assertFalse(config.isRedisEnableTls());
         testContext.assertEquals(config.getExpirablePrefix(), "rest-storage:expirable");
         testContext.assertEquals(config.getResourcesPrefix(), "rest-storage:resources");
         testContext.assertEquals(config.getCollectionsPrefix(), "rest-storage:collections");
@@ -59,7 +59,7 @@ public class ModuleConfigurationTest {
         ModuleConfiguration config = new ModuleConfiguration()
                 .redisHost("anotherhost")
                 .redisPort(1234)
-                .redisEnableTLS(true)
+                .redisEnableTls(true)
                 .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
@@ -94,7 +94,7 @@ public class ModuleConfigurationTest {
         // overridden values
         testContext.assertEquals(config.getRedisHost(), "anotherhost");
         testContext.assertEquals(config.getRedisPort(), 1234);
-        testContext.assertTrue(config.isRedisEnableTLS());
+        testContext.assertTrue(config.isRedisEnableTls());
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertNotNull(config.getEditorConfig());
         testContext.assertTrue(config.getEditorConfig().containsKey("myKey"));
@@ -119,7 +119,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getInteger("port"), 8989);
         testContext.assertFalse(json.getBoolean("httpRequestHandlerAuthenticationEnabled"));
         testContext.assertTrue(json.getBoolean("httpRequestHandlerEnabled"));
-        testContext.assertFalse(json.getBoolean("redisEnableTLS"));
+        testContext.assertFalse(json.getBoolean("redisEnableTls"));
         testContext.assertNull(json.getJsonObject("httpRequestHandlerUsername"));
         testContext.assertNull(json.getJsonObject("httpRequestHandlerPassword"));
         testContext.assertEquals(json.getString("prefix"), "");
@@ -147,7 +147,7 @@ public class ModuleConfigurationTest {
         ModuleConfiguration config = new ModuleConfiguration()
                 .redisHost("anotherhost")
                 .redisPort(1234)
-                .redisEnableTLS(true)
+                .redisEnableTls(true)
                 .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
@@ -181,7 +181,7 @@ public class ModuleConfigurationTest {
         // overridden values
         testContext.assertEquals(json.getString("redisHost"), "anotherhost");
         testContext.assertEquals(json.getInteger("redisPort"), 1234);
-        testContext.assertTrue(json.getBoolean("redisEnableTLS"));
+        testContext.assertTrue(json.getBoolean("redisEnableTls"));
         testContext.assertTrue(json.getBoolean("confirmCollectionDelete"));
         testContext.assertTrue(json.getBoolean("rejectStorageWriteOnLowMemory"));
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 5000L);
@@ -209,7 +209,7 @@ public class ModuleConfigurationTest {
         testContext.assertNull(config.getEditorConfig());
         testContext.assertEquals(config.getRedisHost(), "localhost");
         testContext.assertEquals(config.getRedisPort(), 6379);
-        testContext.assertFalse(json.getBoolean("redisEnableTLS"));
+        testContext.assertFalse(json.getBoolean("redisEnableTls"));
         testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 2048);
         testContext.assertEquals(config.getExpirablePrefix(), "rest-storage:expirable");
         testContext.assertEquals(config.getResourcesPrefix(), "rest-storage:resources");
@@ -234,7 +234,7 @@ public class ModuleConfigurationTest {
         json.put("root", "newroot");
         json.put("storageType", "redis");
         json.put("port", 1234);
-        json.put("redisEnableTLS", true);
+        json.put("redisEnableTls", true);
         json.put("httpRequestHandlerEnabled", false);
         json.put("httpRequestHandlerAuthenticationEnabled", true);
         json.put("httpRequestHandlerUsername", "foo");
@@ -260,7 +260,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRoot(), "newroot");
         testContext.assertEquals(config.getStorageType(), StorageType.redis);
         testContext.assertEquals(config.getPort(), 1234);
-        testContext.assertTrue(config.isRedisEnableTLS());
+        testContext.assertTrue(config.isRedisEnableTls());
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
         testContext.assertEquals(config.getHttpRequestHandlerUsername(), "foo");

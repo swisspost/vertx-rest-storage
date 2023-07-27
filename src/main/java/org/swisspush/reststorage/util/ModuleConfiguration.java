@@ -31,6 +31,7 @@ public class ModuleConfiguration {
     private Map<String, String> editorConfig = null;
     private String redisHost = "localhost";
     private int redisPort = 6379;
+    private boolean redisEnableTLS;
     private String redisAuth = null;
     private String expirablePrefix = "rest-storage:expirable";
     private String resourcesPrefix = "rest-storage:resources";
@@ -112,6 +113,12 @@ public class ModuleConfiguration {
         this.redisPort = redisPort;
         return this;
     }
+
+    public ModuleConfiguration redisEnableTLS(boolean redisEnableTLS) {
+        this.redisEnableTLS = redisEnableTLS;
+        return this;
+    }
+
     public ModuleConfiguration redisAuth(String redisAuth) {
         this.redisAuth = redisAuth;
         return this;
@@ -233,6 +240,10 @@ public class ModuleConfiguration {
 
     public int getRedisPort() {
         return redisPort;
+    }
+
+    public boolean isRedisEnableTLS() {
+        return redisEnableTLS;
     }
 
     public String getRedisAuth() {

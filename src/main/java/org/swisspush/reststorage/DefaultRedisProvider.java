@@ -62,8 +62,9 @@ public class DefaultRedisProvider implements RedisProvider {
 
     private Future<RedisAPI> connectToRedis() {
         Promise<RedisAPI> promise = Promise.promise();
+        String protocol =  configuration.isRedisEnableTls() ? "rediss://" : "redis://";
         Redis.createClient(vertx, new RedisOptions()
-                .setConnectionString("redis://" + configuration.getRedisHost() + ":" + configuration.getRedisPort())
+                .setConnectionString(protocol + configuration.getRedisHost() + ":" + configuration.getRedisPort())
                 .setPassword((configuration.getRedisAuth() == null ? "" : configuration.getRedisAuth()))
                 .setMaxPoolSize(configuration.getMaxRedisConnectionPoolSize())
                 .setMaxPoolWaiting(configuration.getMaxQueueWaiting())

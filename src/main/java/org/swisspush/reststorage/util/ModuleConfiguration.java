@@ -1,6 +1,7 @@
 package org.swisspush.reststorage.util;
 
 import io.vertx.core.json.JsonObject;
+import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +34,7 @@ public class ModuleConfiguration {
     private int redisPort = 6379;
     private boolean redisEnableTls;
     private String redisAuth = null;
+    private String redisUser = null;
     private String expirablePrefix = "rest-storage:expirable";
     private String resourcesPrefix = "rest-storage:resources";
     private String collectionsPrefix = "rest-storage:collections";
@@ -121,6 +123,11 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisAuth(String redisAuth) {
         this.redisAuth = redisAuth;
+        return this;
+    }
+
+    public ModuleConfiguration redisUser(String redisUser) {
+        this.redisUser = redisUser;
         return this;
     }
 
@@ -248,6 +255,10 @@ public class ModuleConfiguration {
 
     public String getRedisAuth() {
         return redisAuth;
+    }
+
+    public String getRedisUser() {
+        return redisUser;
     }
 
     public String getExpirablePrefix() {

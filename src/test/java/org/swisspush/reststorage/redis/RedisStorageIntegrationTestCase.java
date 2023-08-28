@@ -1,4 +1,4 @@
-package org.swisspush.reststorage;
+package org.swisspush.reststorage.redis;
 
 import io.restassured.RestAssured;
 import io.restassured.parsing.Parser;
@@ -9,6 +9,9 @@ import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.runner.RunWith;
+import org.swisspush.reststorage.ConfigurableTestCase;
+import org.swisspush.reststorage.JedisFactory;
+import org.swisspush.reststorage.RestStorageMod;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 import redis.clients.jedis.Jedis;
 

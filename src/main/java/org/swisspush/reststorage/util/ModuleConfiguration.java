@@ -38,6 +38,7 @@ public class ModuleConfiguration {
     private String collectionsPrefix = "rest-storage:collections";
     private String deltaResourcesPrefix = "delta:resources";
     private String deltaEtagsPrefix = "delta:etags";
+    private Integer resourceCleanupIntervalSec = null;
     private long resourceCleanupAmount = 100_000L;
     private String lockPrefix = "rest-storage:locks";
     private boolean confirmCollectionDelete = false;
@@ -151,6 +152,16 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration resourceCleanupAmount(long resourceCleanupAmount) {
         this.resourceCleanupAmount = resourceCleanupAmount;
+        return this;
+    }
+
+    public ModuleConfiguration resourceCleanupIntervalSec(Integer resourceCleanupIntervalSec) {
+        if(resourceCleanupIntervalSec == null || resourceCleanupIntervalSec < 1){
+            log.warn("Resource cleanup interval value is either null or negative. Interval cleanup will not be activated");
+            this.resourceCleanupIntervalSec = null;
+        }else {
+            this.resourceCleanupIntervalSec = resourceCleanupIntervalSec;
+        }
         return this;
     }
 
@@ -268,6 +279,10 @@ public class ModuleConfiguration {
 
     public String getDeltaEtagsPrefix() {
         return deltaEtagsPrefix;
+    }
+
+    public Integer getResourceCleanupIntervalSec() {
+        return resourceCleanupIntervalSec;
     }
 
     public long getResourceCleanupAmount() {

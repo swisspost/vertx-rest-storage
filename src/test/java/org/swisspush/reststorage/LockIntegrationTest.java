@@ -5,6 +5,7 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.StatusCode;
 

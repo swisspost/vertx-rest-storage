@@ -6,6 +6,7 @@ import io.vertx.core.Vertx;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisOptions;
+import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.concurrent.atomic.AtomicReference;

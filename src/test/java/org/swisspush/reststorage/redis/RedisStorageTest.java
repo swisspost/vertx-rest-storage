@@ -1,4 +1,4 @@
-package org.swisspush.reststorage;
+package org.swisspush.reststorage.redis;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;

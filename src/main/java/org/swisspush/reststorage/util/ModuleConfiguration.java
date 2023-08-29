@@ -32,7 +32,13 @@ public class ModuleConfiguration {
     private String redisHost = "localhost";
     private int redisPort = 6379;
     private boolean redisEnableTls;
+    /**
+     * @deprecated Instance authentication is considered as legacy. With Redis from 6.x on the ACL authentication method should be used.
+     */
+    @Deprecated(since = "3.0.17")
     private String redisAuth = null;
+    private String redisPassword = null;
+    private String redisUser = null;
     private String expirablePrefix = "rest-storage:expirable";
     private String resourcesPrefix = "rest-storage:resources";
     private String collectionsPrefix = "rest-storage:collections";
@@ -119,8 +125,19 @@ public class ModuleConfiguration {
         return this;
     }
 
+    @Deprecated(since = "3.0.17")
     public ModuleConfiguration redisAuth(String redisAuth) {
         this.redisAuth = redisAuth;
+        return this;
+    }
+
+    public ModuleConfiguration redisPassword(String redisPassword) {
+        this.redisPassword = redisPassword;
+        return this;
+    }
+
+    public ModuleConfiguration redisUser(String redisUser) {
+        this.redisUser = redisUser;
         return this;
     }
 
@@ -248,6 +265,14 @@ public class ModuleConfiguration {
 
     public String getRedisAuth() {
         return redisAuth;
+    }
+
+    public String getRedisPassword() {
+        return redisPassword;
+    }
+
+    public String getRedisUser() {
+        return redisUser;
     }
 
     public String getExpirablePrefix() {

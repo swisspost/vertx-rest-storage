@@ -6,6 +6,7 @@ import io.vertx.core.Vertx;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisOptions;
+import org.apache.commons.lang.StringUtils;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -62,9 +63,8 @@ public class DefaultRedisProvider implements RedisProvider {
 
     private Future<RedisAPI> connectToRedis() {
         Promise<RedisAPI> promise = Promise.promise();
-        String protocol =  configuration.isRedisEnableTls() ? "rediss://" : "redis://";
         Redis.createClient(vertx, new RedisOptions()
-                .setConnectionString(protocol + configuration.getRedisHost() + ":" + configuration.getRedisPort())
+                .setConnectionString(createConnectString())
                 .setPassword((configuration.getRedisAuth() == null ? "" : configuration.getRedisAuth()))
                 .setMaxPoolSize(configuration.getMaxRedisConnectionPoolSize())
                 .setMaxPoolWaiting(configuration.getMaxQueueWaiting())
@@ -78,5 +78,17 @@ public class DefaultRedisProvider implements RedisProvider {
         });
 
         return promise.future();
+    }
+
+    private String createConnectString() {
+        StringBuilder connectionStringBuilder = new StringBuilder();
+        connectionStringBuilder.append(configuration.isRedisEnableTls() ? "rediss://" : "redis://");
+        String redisUser = configuration.getRedisUser();
+        String redisPassword = configuration.getRedisPassword();
+        if (StringUtils.isNotEmpty(redisUser) && StringUtils.isNotEmpty(redisPassword)) {
+            connectionStringBuilder.append(configuration.getRedisUser()).append(":").append(redisPassword).append("@");
+        }
+        connectionStringBuilder.append(configuration.getRedisHost()).append(":").append(configuration.getRedisPort());
+        return connectionStringBuilder.toString();
     }
 }

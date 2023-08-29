@@ -32,7 +32,7 @@ import java.util.stream.Stream;
 
 public class RedisStorage implements Storage {
 
-    private Logger log = LoggerFactory.getLogger(RedisStorage.class);
+    private final Logger log = LoggerFactory.getLogger(RedisStorage.class);
 
     // set to very high value = Wed Nov 16 5138 09:46:39
     private static final String MAX_EXPIRE_IN_MILLIS = "99999999999999";
@@ -43,21 +43,21 @@ public class RedisStorage implements Storage {
 
     public static final String STORAGE_CLEANUP_TASK_LOCK = "storageCleanupTask";
 
-    private String redisResourcesPrefix;
-    private String redisCollectionsPrefix;
-    private String redisDeltaResourcesPrefix;
-    private String redisDeltaEtagsPrefix;
-    private String expirableSet;
-    private Integer resourceCleanupIntervalSec;
-    private long cleanupResourcesAmount;
-    private String redisLockPrefix;
-    private Vertx vertx;
+    private final String redisResourcesPrefix;
+    private final String redisCollectionsPrefix;
+    private final String redisDeltaResourcesPrefix;
+    private final String redisDeltaEtagsPrefix;
+    private final String expirableSet;
+    private final Integer resourceCleanupIntervalSec;
+    private final long cleanupResourcesAmount;
+    private final String redisLockPrefix;
+    private final Vertx vertx;
 
-    private Lock lock;
+    private final Lock lock;
 
-    private RedisProvider redisProvider;
-    private Map<LuaScript, LuaScriptState> luaScripts = new HashMap<>();
-    private DecimalFormat decimalFormat;
+    private final RedisProvider redisProvider;
+    private final Map<LuaScript, LuaScriptState> luaScripts = new HashMap<>();
+    private final DecimalFormat decimalFormat;
 
     private Optional<Float> currentMemoryUsageOptional = Optional.empty();
 
@@ -119,9 +119,8 @@ public class RedisStorage implements Storage {
                     if (lockEvent.succeeded()) {
                         if (lockEvent.result()) {
                             cleanup(cleanupEvent -> cleanupEvent.readStream.handler(this::logCleanupResult)
-                                    .endHandler(nothing -> {
-                                        cleanupEvent.closeHandler.handle(null);
-                                    }), String.valueOf(cleanupResourcesAmount));
+                                            .endHandler(nothing -> cleanupEvent.closeHandler.handle(null)),
+                                    String.valueOf(cleanupResourcesAmount));
                         }
                     } else {
                         log.error("Could not acquire lock '{}'. Message: {}", STORAGE_CLEANUP_TASK_LOCK, lockEvent.cause().getMessage());
@@ -225,7 +224,7 @@ public class RedisStorage implements Storage {
     private enum LuaScript {
         GET("get.lua"), STORAGE_EXPAND("storageExpand.lua"), PUT("put.lua"), DELETE("del.lua"), CLEANUP("cleanup.lua");
 
-        private String file;
+        private final String file;
 
         LuaScript(String file) {
             this.file = file;
@@ -241,7 +240,7 @@ public class RedisStorage implements Storage {
      */
     private class LuaScriptState {
 
-        private LuaScript luaScriptType;
+        private final LuaScript luaScriptType;
         /**
          * the script itself
          */
@@ -433,7 +432,7 @@ public class RedisStorage implements Storage {
 
     public class ByteArrayReadStream implements ReadStream<Buffer> {
 
-        ByteArrayInputStream content;
+        final ByteArrayInputStream content;
         int size;
         boolean paused;
         int position;
@@ -530,9 +529,9 @@ public class RedisStorage implements Storage {
      */
     private class Get implements RedisCommand {
 
-        private List<String> keys;
-        private List<String> arguments;
-        private Handler<Resource> handler;
+        private final List<String> keys;
+        private final List<String> arguments;
+        private final Handler<Resource> handler;
 
         public Get(List<String> keys, List<String> arguments, final Handler<Resource> handler) {
             this.keys = keys;
@@ -598,10 +597,10 @@ public class RedisStorage implements Storage {
      */
     private class StorageExpand implements RedisCommand {
 
-        private List<String> keys;
-        private List<String> arguments;
-        private Handler<Resource> handler;
-        private String etag;
+        private final List<String> keys;
+        private final List<String> arguments;
+        private final Handler<Resource> handler;
+        private final String etag;
 
         public StorageExpand(List<String> keys, List<String> arguments, final Handler<Resource> handler, String etag) {
             this.keys = keys;
@@ -917,10 +916,10 @@ public class RedisStorage implements Storage {
      */
     private class Put implements RedisCommand {
 
-        private DocumentResource d;
-        private List<String> keys;
-        private List<String> arguments;
-        private Handler<Resource> handler;
+        private final DocumentResource d;
+        private final List<String> keys;
+        private final List<String> arguments;
+        private final Handler<Resource> handler;
 
         public Put(DocumentResource d, List<String> keys, List<String> arguments, Handler<Resource> handler) {
             this.d = d;
@@ -1005,9 +1004,9 @@ public class RedisStorage implements Storage {
      */
     private class Delete implements RedisCommand {
 
-        private List<String> keys;
-        private List<String> arguments;
-        private Handler<Resource> handler;
+        private final List<String> keys;
+        private final List<String> arguments;
+        private final Handler<Resource> handler;
 
         public Delete(List<String> keys, List<String> arguments, final Handler<Resource> handler) {
             this.keys = keys;

@@ -14,7 +14,7 @@ import java.util.Arrays;
  * Created by webermarca on 01.07.2016.
  */
 public class LuaScriptState {
-    private LuaScript luaScriptType;
+    private final LuaScript luaScriptType;
     /**
      * the script itself
      */
@@ -28,9 +28,9 @@ public class LuaScriptState {
      */
     private String sha;
 
-    private RedisProvider redisProvider;
+    private final RedisProvider redisProvider;
 
-    private Logger log = LoggerFactory.getLogger(LuaScriptState.class);
+    private final Logger log = LoggerFactory.getLogger(LuaScriptState.class);
 
     public LuaScriptState(LuaScript luaScriptType, RedisProvider redisProvider, boolean logoutput) {
         this.luaScriptType = luaScriptType;

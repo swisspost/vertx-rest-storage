@@ -10,7 +10,7 @@ public class MimeTypeResolver {
 
     private Map<String, String> mimeTypes = new HashMap<>();
     
-    private String defaultMimeType;
+    private final String defaultMimeType;
     
     public MimeTypeResolver(String defaultMimeType) {
         this.defaultMimeType = defaultMimeType;

@@ -11,7 +11,7 @@ import org.swisspush.reststorage.util.ModuleConfiguration;
 
 public class RestStorageMod extends AbstractVerticle {
 
-    private Logger log = LoggerFactory.getLogger(RestStorageMod.class);
+    private final Logger log = LoggerFactory.getLogger(RestStorageMod.class);
 
     private RedisProvider redisProvider;
 

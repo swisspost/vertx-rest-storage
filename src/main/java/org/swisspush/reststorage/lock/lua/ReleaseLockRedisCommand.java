@@ -12,12 +12,12 @@ import java.util.List;
  */
 public class ReleaseLockRedisCommand implements RedisCommand {
 
-    private LuaScriptState luaScriptState;
-    private List<String> keys;
-    private List<String> arguments;
-    private Promise<Boolean> promise;
-    private RedisProvider redisProvider;
-    private Logger log;
+    private final LuaScriptState luaScriptState;
+    private final List<String> keys;
+    private final List<String> arguments;
+    private final Promise<Boolean> promise;
+    private final RedisProvider redisProvider;
+    private final Logger log;
 
     public ReleaseLockRedisCommand(LuaScriptState luaScriptState, List<String> keys, List<String> arguments,
                                    RedisProvider redisProvider, Logger log, final Promise<Boolean> promise) {

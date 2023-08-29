@@ -27,12 +27,12 @@ import java.util.List;
  */
 public class RedisBasedLock implements Lock {
 
-    private Logger log = LoggerFactory.getLogger(RedisBasedLock.class);
+    private final Logger log = LoggerFactory.getLogger(RedisBasedLock.class);
 
     public static final String STORAGE_PREFIX = "rest-storage-lock:";
 
-    private LuaScriptState releaseLockLuaScriptState;
-    private RedisProvider redisProvider;
+    private final LuaScriptState releaseLockLuaScriptState;
+    private final RedisProvider redisProvider;
 
     public RedisBasedLock(RedisProvider redisProvider) {
         this.redisProvider = redisProvider;

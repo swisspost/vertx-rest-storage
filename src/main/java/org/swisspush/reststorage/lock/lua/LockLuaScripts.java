@@ -8,7 +8,7 @@ public enum LockLuaScripts implements LuaScript {
 
     LOCK_RELEASE("lock_release.lua");
 
-    private String file;
+    private final String file;
 
     LockLuaScripts(String file) {
         this.file = file;

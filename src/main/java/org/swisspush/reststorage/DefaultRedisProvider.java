@@ -20,7 +20,7 @@ public class DefaultRedisProvider implements RedisProvider {
 
     private final Vertx vertx;
 
-    private ModuleConfiguration configuration;
+    private final ModuleConfiguration configuration;
 
     private RedisAPI redisAPI;
 

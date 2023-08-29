@@ -326,8 +326,7 @@ public class ModuleConfiguration {
     }
 
     public static ModuleConfiguration fromJsonObject(JsonObject json) {
-        ModuleConfiguration mc = json.mapTo(ModuleConfiguration.class);
-        return mc;
+        return json.mapTo(ModuleConfiguration.class);
     }
 
     @Override

@@ -14,7 +14,8 @@ public class RedisRestStorageRunner {
 
     public static void main(String[] args) {
         ModuleConfiguration modConfig = new ModuleConfiguration()
-                .storageType(ModuleConfiguration.StorageType.redis);
+                .storageType(ModuleConfiguration.StorageType.redis)
+                .resourceCleanupIntervalSec(10);
 
         Vertx.vertx().deployVerticle(new RestStorageMod(), new DeploymentOptions().setConfig(modConfig.asJsonObject()), event ->
                 LoggerFactory.getLogger(RedisRestStorageRunner.class).info("rest-storage started"));

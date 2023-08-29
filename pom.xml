@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.swisspush</groupId>
     <artifactId>rest-storage</artifactId>
-    <version>3.0.15-SNAPSHOT</version>
+    <version>3.0.16-SNAPSHOT</version>
     <name>rest-storage</name>
     <description>
         Persistence for REST resources in the filesystem or a redis database
@@ -415,7 +415,7 @@
         <mockito.version>1.10.19</mockito.version>
         <rest-assured.version>4.3.0</rest-assured.version>
         <awaitility.version>1.6.5</awaitility.version>
-        <jedis.version>2.9.0</jedis.version>
+        <jedis.version>3.7.0</jedis.version>
         <project.build.sourceEncoding>UTF8</project.build.sourceEncoding>
         <sonatypeOssDistMgmtSnapshotsUrl>
             https://oss.sonatype.org/content/repositories/snapshots/

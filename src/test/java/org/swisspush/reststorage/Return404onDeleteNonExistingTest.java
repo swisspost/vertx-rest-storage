@@ -1,6 +1,7 @@
 package org.swisspush.reststorage;
 
 import org.junit.Test;
+import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 
 import static io.restassured.RestAssured.when;
 

@@ -34,7 +34,7 @@ public class ModuleConfigurationAuthentication implements AuthenticationProvider
         }
     }
 
-    private User user;
+    private final User user;
 
     public ModuleConfigurationAuthentication(ModuleConfiguration configuration) {
         Objects.requireNonNull(configuration);

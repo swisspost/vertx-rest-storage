@@ -27,7 +27,7 @@ public class FileSystemStorage implements Storage {
     private final int rootLen;
     private final FileSystemDirLister fileSystemDirLister;
 
-    private Logger log = LoggerFactory.getLogger(FileSystemStorage.class);
+    private final Logger log = LoggerFactory.getLogger(FileSystemStorage.class);
 
     public FileSystemStorage(Vertx vertx, String root) {
         this.vertx = vertx;

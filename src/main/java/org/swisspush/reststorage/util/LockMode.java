@@ -11,7 +11,7 @@ public enum LockMode {
     SILENT("silent"),
     REJECT("reject");
 
-    private String lockMode;
+    private final String lockMode;
 
     LockMode(String lockMode) {
         this.lockMode = lockMode;

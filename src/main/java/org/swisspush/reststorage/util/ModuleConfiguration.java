@@ -32,12 +32,19 @@ public class ModuleConfiguration {
     private String redisHost = "localhost";
     private int redisPort = 6379;
     private boolean redisEnableTls;
+    /**
+     * @deprecated Instance authentication is considered as legacy. With Redis from 6.x on the ACL authentication method should be used.
+     */
+    @Deprecated(since = "3.0.17")
     private String redisAuth = null;
+    private String redisPassword = null;
+    private String redisUser = null;
     private String expirablePrefix = "rest-storage:expirable";
     private String resourcesPrefix = "rest-storage:resources";
     private String collectionsPrefix = "rest-storage:collections";
     private String deltaResourcesPrefix = "delta:resources";
     private String deltaEtagsPrefix = "delta:etags";
+    private Integer resourceCleanupIntervalSec = null;
     private long resourceCleanupAmount = 100_000L;
     private String lockPrefix = "rest-storage:locks";
     private boolean confirmCollectionDelete = false;
@@ -119,8 +126,19 @@ public class ModuleConfiguration {
         return this;
     }
 
+    @Deprecated(since = "3.0.17")
     public ModuleConfiguration redisAuth(String redisAuth) {
         this.redisAuth = redisAuth;
+        return this;
+    }
+
+    public ModuleConfiguration redisPassword(String redisPassword) {
+        this.redisPassword = redisPassword;
+        return this;
+    }
+
+    public ModuleConfiguration redisUser(String redisUser) {
+        this.redisUser = redisUser;
         return this;
     }
 
@@ -151,6 +169,16 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration resourceCleanupAmount(long resourceCleanupAmount) {
         this.resourceCleanupAmount = resourceCleanupAmount;
+        return this;
+    }
+
+    public ModuleConfiguration resourceCleanupIntervalSec(Integer resourceCleanupIntervalSec) {
+        if(resourceCleanupIntervalSec == null || resourceCleanupIntervalSec < 1){
+            log.warn("Resource cleanup interval value is either null or negative. Interval cleanup will not be activated");
+            this.resourceCleanupIntervalSec = null;
+        }else {
+            this.resourceCleanupIntervalSec = resourceCleanupIntervalSec;
+        }
         return this;
     }
 
@@ -250,6 +278,14 @@ public class ModuleConfiguration {
         return redisAuth;
     }
 
+    public String getRedisPassword() {
+        return redisPassword;
+    }
+
+    public String getRedisUser() {
+        return redisUser;
+    }
+
     public String getExpirablePrefix() {
         return expirablePrefix;
     }
@@ -268,6 +304,10 @@ public class ModuleConfiguration {
 
     public String getDeltaEtagsPrefix() {
         return deltaEtagsPrefix;
+    }
+
+    public Integer getResourceCleanupIntervalSec() {
+        return resourceCleanupIntervalSec;
     }
 
     public long getResourceCleanupAmount() {
@@ -311,8 +351,7 @@ public class ModuleConfiguration {
     }
 
     public static ModuleConfiguration fromJsonObject(JsonObject json) {
-        ModuleConfiguration mc = json.mapTo(ModuleConfiguration.class);
-        return mc;
+        return json.mapTo(ModuleConfiguration.class);
     }
 
     @Override

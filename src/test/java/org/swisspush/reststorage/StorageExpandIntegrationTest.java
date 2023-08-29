@@ -17,6 +17,7 @@ import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;

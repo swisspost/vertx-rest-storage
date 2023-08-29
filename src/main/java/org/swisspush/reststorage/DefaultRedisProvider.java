@@ -7,6 +7,7 @@ import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisOptions;
 import org.apache.commons.lang.StringUtils;
+import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,7 +21,7 @@ public class DefaultRedisProvider implements RedisProvider {
 
     private final Vertx vertx;
 
-    private ModuleConfiguration configuration;
+    private final ModuleConfiguration configuration;
 
     private RedisAPI redisAPI;
 

@@ -49,6 +49,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getDeltaResourcesPrefix(), "delta:resources");
         testContext.assertEquals(config.getDeltaEtagsPrefix(), "delta:etags");
         testContext.assertEquals(config.getResourceCleanupAmount(), 100000L);
+        testContext.assertNull(config.getResourceCleanupIntervalSec());
         testContext.assertEquals(config.getLockPrefix(), "rest-storage:locks");
         testContext.assertFalse(config.isConfirmCollectionDelete());
         testContext.assertFalse(config.isRejectStorageWriteOnLowMemory());
@@ -75,6 +76,7 @@ public class ModuleConfigurationTest {
                 .httpRequestHandlerPassword("bar")
                 .rejectStorageWriteOnLowMemory(true)
                 .freeMemoryCheckIntervalMs(10000)
+                .resourceCleanupIntervalSec(15)
                 .maxRedisWaitingHandlers(4096)
                 .return200onDeleteNonExisting(true);
 
@@ -109,6 +111,7 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(config.isConfirmCollectionDelete());
         testContext.assertTrue(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 10000L);
+        testContext.assertEquals(config.getResourceCleanupIntervalSec(), 15);
         testContext.assertTrue(config.isReturn200onDeleteNonExisting());
         testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 4096);
         testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
@@ -167,6 +170,7 @@ public class ModuleConfigurationTest {
                 .httpRequestHandlerPassword("bar")
                 .confirmCollectionDelete(true)
                 .rejectStorageWriteOnLowMemory(true)
+                .resourceCleanupIntervalSec(15)
                 .freeMemoryCheckIntervalMs(5000);
 
         JsonObject json = config.asJsonObject();
@@ -193,8 +197,9 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(json.getBoolean("redisEnableTls"));
         testContext.assertTrue(json.getBoolean("confirmCollectionDelete"));
         testContext.assertTrue(json.getBoolean("rejectStorageWriteOnLowMemory"));
-        testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 5000L);
+        testContext.assertEquals(json.getLong("freeMemoryCheckIntervalMs"), 5000L);
         testContext.assertEquals(json.getInteger("maxRedisWaitingHandlers"), 4096);
+        testContext.assertEquals(json.getInteger("resourceCleanupIntervalSec"), 15);
 
         testContext.assertNotNull(json.getJsonObject("editorConfig"));
         testContext.assertTrue(json.getJsonObject("editorConfig").containsKey("myKey"));
@@ -225,6 +230,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getCollectionsPrefix(), "rest-storage:collections");
         testContext.assertEquals(config.getDeltaResourcesPrefix(), "delta:resources");
         testContext.assertEquals(config.getDeltaEtagsPrefix(), "delta:etags");
+        testContext.assertNull(config.getResourceCleanupIntervalSec());
         testContext.assertEquals(config.getResourceCleanupAmount(), 100000L);
         testContext.assertEquals(config.getLockPrefix(), "rest-storage:locks");
         testContext.assertFalse(config.isConfirmCollectionDelete());
@@ -259,6 +265,7 @@ public class ModuleConfigurationTest {
         json.put("collectionsPrefix", "newCollectionsPrefix");
         json.put("deltaResourcesPrefix", "newDeltaResourcesPrefix");
         json.put("deltaEtagsPrefix", "newDeltaEtagsPrefix");
+        json.put("resourceCleanupIntervalSec", 30);
         json.put("resourceCleanupAmount", 999L);
         json.put("lockPrefix", "newLockPrefix");
         json.put("confirmCollectionDelete", true);
@@ -289,10 +296,45 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getCollectionsPrefix(), "newCollectionsPrefix");
         testContext.assertEquals(config.getDeltaResourcesPrefix(), "newDeltaResourcesPrefix");
         testContext.assertEquals(config.getDeltaEtagsPrefix(), "newDeltaEtagsPrefix");
+        testContext.assertEquals(config.getResourceCleanupIntervalSec(), 30);
         testContext.assertEquals(config.getResourceCleanupAmount(), 999L);
         testContext.assertEquals(config.getLockPrefix(), "newLockPrefix");
         testContext.assertTrue(config.isConfirmCollectionDelete());
         testContext.assertTrue(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 30000L);
+    }
+
+    @Test
+    public void testResourceCleanupIntervalSec(TestContext testContext) {
+        ModuleConfiguration config = new ModuleConfiguration()
+                .resourceCleanupIntervalSec(0);
+
+        String json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertNull(config.getResourceCleanupIntervalSec());
+
+        config = new ModuleConfiguration()
+                .resourceCleanupIntervalSec(20);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertEquals(20, config.getResourceCleanupIntervalSec());
+
+        config = new ModuleConfiguration()
+                .resourceCleanupIntervalSec(0);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertNull(config.getResourceCleanupIntervalSec());
+
+        config = new ModuleConfiguration()
+                .resourceCleanupIntervalSec(-50);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertNull(config.getResourceCleanupIntervalSec());
+
+        config = new ModuleConfiguration()
+                .resourceCleanupIntervalSec(null);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertNull(config.getResourceCleanupIntervalSec());
     }
 }

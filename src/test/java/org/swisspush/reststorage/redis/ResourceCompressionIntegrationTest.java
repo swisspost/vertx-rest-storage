@@ -1,5 +1,5 @@
 
-package org.swisspush.reststorage;
+package org.swisspush.reststorage.redis;
 
 import io.restassured.specification.RequestSpecification;
 import io.vertx.ext.unit.Async;

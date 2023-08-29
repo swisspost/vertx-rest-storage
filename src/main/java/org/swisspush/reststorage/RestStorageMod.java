@@ -5,11 +5,13 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.redis.RedisProvider;
+import org.swisspush.reststorage.redis.RedisStorage;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 public class RestStorageMod extends AbstractVerticle {
 
-    private Logger log = LoggerFactory.getLogger(RestStorageMod.class);
+    private final Logger log = LoggerFactory.getLogger(RestStorageMod.class);
 
     private RedisProvider redisProvider;
 

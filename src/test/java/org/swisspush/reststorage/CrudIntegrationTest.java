@@ -8,6 +8,7 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 
 import java.util.List;
 

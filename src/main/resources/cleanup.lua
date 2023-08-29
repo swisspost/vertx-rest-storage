@@ -12,7 +12,7 @@ local bulksize = tonumber(ARGV[11])
 
 -- Important: The ARGV-Array is used again in the included del.lua script
 -- (see this funny comment with the percent sign below and Java-Method
---      org.swisspush.reststorage.RedisStorage.LuaScriptState.composeLuaScript)
+--      org.swisspush.reststorage.redis.RedisStorage.LuaScriptState.composeLuaScript)
 -- we need to initialize all parameters for del.lua here - otherwise we can have side effects
 -- See open issue https://github.com/swisspush/vertx-rest-storage/issues/83
 ARGV[10] = ''

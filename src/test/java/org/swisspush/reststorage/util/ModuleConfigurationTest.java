@@ -40,6 +40,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisHost(), "localhost");
         testContext.assertEquals(config.getRedisPort(), 6379);
         testContext.assertFalse(config.isRedisEnableTls());
+        testContext.assertNull(config.getRedisAuth());
+        testContext.assertNull(config.getRedisUser());
+        testContext.assertNull(config.getRedisPassword());
         testContext.assertEquals(config.getExpirablePrefix(), "rest-storage:expirable");
         testContext.assertEquals(config.getResourcesPrefix(), "rest-storage:resources");
         testContext.assertEquals(config.getCollectionsPrefix(), "rest-storage:collections");

@@ -62,6 +62,7 @@ public class RedisStorage implements Storage {
     private Optional<Float> currentMemoryUsageOptional = Optional.empty();
 
     private final String ID;
+    private final String hostAndPort;
 
     public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisProvider redisProvider) {
         this.expirableSet = config.getExpirablePrefix();
@@ -79,6 +80,7 @@ public class RedisStorage implements Storage {
         this.decimalFormat.setMaximumFractionDigits(1);
 
         this.ID = UUID.randomUUID().toString();
+        this.hostAndPort = config.getRedisHost() + ":" + config.getPort();
         this.lock = new RedisBasedLock(redisProvider);
 
         // load all the lua scripts
@@ -218,7 +220,7 @@ public class RedisStorage implements Storage {
     }
 
     private void logCleanupResult(Object resultEvent) {
-        log.debug(resultEvent.toString());
+        log.debug("instance {} -> {}" , hostAndPort, resultEvent.toString());
     }
 
     private enum LuaScript {

@@ -63,6 +63,8 @@ public class ModuleConfigurationTest {
                 .redisHost("anotherhost")
                 .redisPort(1234)
                 .redisEnableTls(true)
+                .redisUser("myUser")
+                .redisPassword("secretPassword")
                 .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
@@ -98,6 +100,8 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisHost(), "anotherhost");
         testContext.assertEquals(config.getRedisPort(), 1234);
         testContext.assertTrue(config.isRedisEnableTls());
+        testContext.assertEquals(config.getRedisUser(), "myUser");
+        testContext.assertEquals(config.getRedisPassword(), "secretPassword");
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertNotNull(config.getEditorConfig());
         testContext.assertTrue(config.getEditorConfig().containsKey("myKey"));

@@ -84,8 +84,9 @@ public class DefaultRedisProvider implements RedisProvider {
         StringBuilder connectionStringBuilder = new StringBuilder();
         connectionStringBuilder.append(configuration.isRedisEnableTls() ? "rediss://" : "redis://");
         String redisUser = configuration.getRedisUser();
-        if (StringUtils.isNotEmpty(redisUser)) {
-            connectionStringBuilder.append(configuration.getRedisUser()).append(":").append(configuration.getRedisAuth()).append("@");
+        String redisPassword = configuration.getRedisPassword();
+        if (StringUtils.isNotEmpty(redisUser) && StringUtils.isNotEmpty(redisPassword)) {
+            connectionStringBuilder.append(configuration.getRedisUser()).append(":").append(redisPassword).append("@");
         }
         connectionStringBuilder.append(configuration.getRedisHost()).append(":").append(configuration.getRedisPort());
         return connectionStringBuilder.toString();

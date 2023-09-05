@@ -15,6 +15,8 @@ public class RedisRestStorageRunner {
     public static void main(String[] args) {
         ModuleConfiguration modConfig = new ModuleConfiguration()
                 .storageType(ModuleConfiguration.StorageType.redis)
+                .redisReconnectAttempts(-1)
+                .redisPoolRecycleTimeoutMs(-1)
                 .resourceCleanupIntervalSec(10);
 
         Vertx.vertx().deployVerticle(new RestStorageMod(), new DeploymentOptions().setConfig(modConfig.asJsonObject()), event ->

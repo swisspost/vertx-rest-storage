@@ -37,6 +37,9 @@ public class ModuleConfiguration {
      */
     @Deprecated(since = "3.0.17")
     private String redisAuth = null;
+    private int redisReconnectAttempts = 0;
+    private int redisReconnectDelaySec = 30;
+    private int redisPoolRecycleTimeoutMs = 180_000;
     private String redisPassword = null;
     private String redisUser = null;
     private String expirablePrefix = "rest-storage:expirable";
@@ -123,6 +126,21 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisEnableTls(boolean redisEnableTls) {
         this.redisEnableTls = redisEnableTls;
+        return this;
+    }
+
+    public ModuleConfiguration redisReconnectAttempts(int redisReconnectAttempts) {
+        this.redisReconnectAttempts = redisReconnectAttempts;
+        return this;
+    }
+
+    public ModuleConfiguration redisReconnectDelaySec(int redisReconnectDelaySec) {
+        this.redisReconnectDelaySec = redisReconnectDelaySec;
+        return this;
+    }
+
+    public ModuleConfiguration redisPoolRecycleTimeoutMs(int redisPoolRecycleTimeoutMs) {
+        this.redisPoolRecycleTimeoutMs = redisPoolRecycleTimeoutMs;
         return this;
     }
 
@@ -268,6 +286,22 @@ public class ModuleConfiguration {
 
     public int getRedisPort() {
         return redisPort;
+    }
+
+    public int getRedisReconnectAttempts() {
+        return redisReconnectAttempts;
+    }
+
+    public int getRedisReconnectDelaySec() {
+        if (redisReconnectDelaySec < 1) {
+            log.debug("Ignoring value {}s for redisReconnectDelay (too small) and use 1 instead", redisReconnectDelaySec);
+            return 1;
+        }
+        return redisReconnectDelaySec;
+    }
+
+    public int getRedisPoolRecycleTimeoutMs() {
+        return redisPoolRecycleTimeoutMs;
     }
 
     public boolean isRedisEnableTls() {

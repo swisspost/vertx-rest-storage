@@ -5,11 +5,15 @@ import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
+import io.vertx.redis.client.RedisConnection;
 import io.vertx.redis.client.RedisOptions;
 import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -19,11 +23,15 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class DefaultRedisProvider implements RedisProvider {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultRedisProvider.class);
     private final Vertx vertx;
 
     private final ModuleConfiguration configuration;
 
     private RedisAPI redisAPI;
+    private Redis redis;
+    private final AtomicBoolean connecting = new AtomicBoolean();
+    private RedisConnection client;
 
     private final AtomicReference<Promise<RedisAPI>> connectPromiseRef = new AtomicReference<>();
 
@@ -39,6 +47,10 @@ public class DefaultRedisProvider implements RedisProvider {
         } else {
             return setupRedisClient();
         }
+    }
+
+    private boolean reconnectEnabled() {
+        return configuration.getRedisReconnectAttempts() != 0;
     }
 
     private Future<RedisAPI> setupRedisClient(){
@@ -63,20 +75,58 @@ public class DefaultRedisProvider implements RedisProvider {
     }
 
     private Future<RedisAPI> connectToRedis() {
+        String redisAuth = configuration.getRedisAuth();
+        int redisMaxPoolSize = configuration.getMaxRedisConnectionPoolSize();
+        int redisMaxPoolWaitingSize = configuration.getMaxQueueWaiting();
+        int redisMaxPipelineWaitingSize = configuration.getMaxRedisWaitingHandlers();
+        int redisPoolRecycleTimeoutMs = configuration.getRedisPoolRecycleTimeoutMs();
+
         Promise<RedisAPI> promise = Promise.promise();
-        Redis.createClient(vertx, new RedisOptions()
-                .setConnectionString(createConnectString())
-                .setPassword((configuration.getRedisAuth() == null ? "" : configuration.getRedisAuth()))
-                .setMaxPoolSize(configuration.getMaxRedisConnectionPoolSize())
-                .setMaxPoolWaiting(configuration.getMaxQueueWaiting())
-                .setMaxWaitingHandlers(configuration.getMaxRedisWaitingHandlers())
-        ).connect(event -> {
-            if (event.failed()) {
-                promise.fail(event.cause());
-            } else {
-                promise.complete(RedisAPI.api(event.result()));
-            }
-        });
+
+        // make sure to invalidate old connection if present
+        if (redis != null) {
+            redis.close();
+        }
+
+        if (connecting.compareAndSet(false, true)) {
+            redis = Redis.createClient(vertx, new RedisOptions()
+                    .setConnectionString(createConnectString())
+                    .setPassword((redisAuth == null ? "" : redisAuth))
+                    .setMaxPoolSize(redisMaxPoolSize)
+                    .setMaxPoolWaiting(redisMaxPoolWaitingSize)
+                    .setPoolRecycleTimeout(redisPoolRecycleTimeoutMs)
+                    .setMaxWaitingHandlers(redisMaxPipelineWaitingSize));
+
+            redis.connect().onSuccess(conn -> {
+                log.info("Successfully connected to redis");
+                client = conn;
+                client.close();
+
+                // make sure the client is reconnected on error
+                // eg, the underlying TCP connection is closed but the client side doesn't know it yet
+                // the client tries to use the staled connection to talk to server. An exceptions will be raised
+                if (reconnectEnabled()) {
+                    conn.exceptionHandler(e -> attemptReconnect(0));
+                }
+
+                // make sure the client is reconnected on connection close
+                // eg, the underlying TCP connection is closed with normal 4-Way-Handshake
+                // this handler will be notified instantly
+                if (reconnectEnabled()) {
+                    conn.endHandler(placeHolder -> attemptReconnect(0));
+                }
+
+                // allow further processing
+                redisAPI = RedisAPI.api(conn);
+                promise.complete(redisAPI);
+                connecting.set(false);
+            }).onFailure(t -> {
+                promise.fail(t);
+                connecting.set(false);
+            });
+        } else {
+            promise.complete(redisAPI);
+        }
 
         return promise.future();
     }
@@ -91,5 +141,26 @@ public class DefaultRedisProvider implements RedisProvider {
         }
         connectionStringBuilder.append(configuration.getRedisHost()).append(":").append(configuration.getRedisPort());
         return connectionStringBuilder.toString();
+    }
+
+    private void attemptReconnect(int retry) {
+
+        log.info("About to reconnect to redis with attempt #{}", retry);
+        int reconnectAttempts = configuration.getRedisReconnectAttempts();
+        if (reconnectAttempts < 0) {
+            doReconnect(retry);
+        } else if (retry > reconnectAttempts) {
+            log.warn("Not reconnecting anymore since max reconnect attempts ({}) are reached", reconnectAttempts);
+            connecting.set(false);
+        } else {
+            doReconnect(retry);
+        }
+    }
+
+    private void doReconnect(int retry) {
+        long backoffMs = (long) (Math.pow(2, Math.min(retry, 10)) * configuration.getRedisReconnectDelaySec());
+        log.debug("Schedule reconnect #{} in {}ms.", retry, backoffMs);
+        vertx.setTimer(backoffMs, timer -> connectToRedis()
+                .onFailure(t -> attemptReconnect(retry + 1)));
     }
 }

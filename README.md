@@ -188,31 +188,34 @@ The data compression feature is not compatible with all vertx-rest-storage featu
 
 The following configuration values are available:
 
-| Property                                | Type   | Default value            | Description                                                                                                                   | 
-|:----------------------------------------|:-------|:-------------------------|:------------------------------------------------------------------------------------------------------------------------------|
-| root                                    | common | .                        | The prefix for the directory or redis key                                                                                     |
-| storageType                             | common | filesystem               | The storage implementation to use. Choose between filesystem or redis                                                         |
-| port                                    | common | 8989                     | The port the mod listens to when HTTP API is enabled.                                                                         |
-| httpRequestHandlerEnabled               | common | true                     | When set to _false_, the storage is accessible throught the event bus only.                                                   |
-| httpRequestHandlerAuthenticationEnabled | common | false                    | Enable / disable authentication for the HTTP API                                                                              |
-| httpRequestHandlerUsername              | common |                          | The username for the HTTP API authentication                                                                                  |
-| httpRequestHandlerPassword              | common |                          | The password for the HTTP API authentication                                                                                  |
-| prefix                                  | common | /                        | The part of the URL path before this handler (aka "context path" in JEE terminology)                                          |
-| storageAddress                          | common | resource-storage         | The eventbus address the mod listens to.                                                                                      |
-| editorConfig                            | common |                          | Additional configuration values for the editor                                                                                |
-| confirmCollectionDelete                 | common | false                    | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections                          |
-| redisHost                               | redis  | localhost                | The host where redis is running on                                                                                            |
-| redisPort                               | redis  | 6379                     | The port where redis is running on                                                                                            |
-| expirablePrefix                         | redis  | rest-storage:expirable   | The prefix for expirable data redis keys                                                                                      |
-| resourcesPrefix                         | redis  | rest-storage:resources   | The prefix for resources redis keys                                                                                           |
-| collectionsPrefix                       | redis  | rest-storage:collections | The prefix for collections redis keys                                                                                         |
-| deltaResourcesPrefix                    | redis  | delta:resources          | The prefix for delta resources redis keys                                                                                     |
-| deltaEtagsPrefix                        | redis  | delta:etags              | The prefix for delta etags redis keys                                                                                         |
-| lockPrefix                              | redis  | rest-storage:locks       | The prefix for lock redis keys                                                                                                |
-| resourceCleanupAmount                   | redis  | 100000                   | The maximum amount of resources to clean in a single cleanup run                                                              |
-| resourceCleanupIntervalSec              | redis  |                          | The interval (in seconds) how often to peform the storage cleanup. When set to _null_ no periodic storage cleanup is peformed |
-| rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                      |
-| freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                             |
+| Property                                | Type   | Default value            | Description                                                                                                                           | 
+|:----------------------------------------|:-------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
+| root                                    | common | .                        | The prefix for the directory or redis key                                                                                             |
+| storageType                             | common | filesystem               | The storage implementation to use. Choose between filesystem or redis                                                                 |
+| port                                    | common | 8989                     | The port the mod listens to when HTTP API is enabled.                                                                                 |
+| httpRequestHandlerEnabled               | common | true                     | When set to _false_, the storage is accessible throught the event bus only.                                                           |
+| httpRequestHandlerAuthenticationEnabled | common | false                    | Enable / disable authentication for the HTTP API                                                                                      |
+| httpRequestHandlerUsername              | common |                          | The username for the HTTP API authentication                                                                                          |
+| httpRequestHandlerPassword              | common |                          | The password for the HTTP API authentication                                                                                          |
+| prefix                                  | common | /                        | The part of the URL path before this handler (aka "context path" in JEE terminology)                                                  |
+| storageAddress                          | common | resource-storage         | The eventbus address the mod listens to.                                                                                              |
+| editorConfig                            | common |                          | Additional configuration values for the editor                                                                                        |
+| confirmCollectionDelete                 | common | false                    | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections                                  |
+| redisHost                               | redis  | localhost                | The host where redis is running on                                                                                                    |
+| redisPort                               | redis  | 6379                     | The port where redis is running on                                                                                                    |
+| redisReconnectAttempts                  | redis  | 0                        | The amount of reconnect attempts when connection to redis is lost. Use _-1_ for continuous reconnects or _0_ for no reconnects at all |
+| redisReconnectDelaySec                  | redis  | 30                       | The delay (in seconds) between each reconnect attempt                                                                                 |
+| redisPoolRecycleTimeoutMs               | redis  | 180000                   | The timeout [ms] when the connection pool is recycled. Use **-1** when having reconnect feature enabled.                              |
+| expirablePrefix                         | redis  | rest-storage:expirable   | The prefix for expirable data redis keys                                                                                              |
+| resourcesPrefix                         | redis  | rest-storage:resources   | The prefix for resources redis keys                                                                                                   |
+| collectionsPrefix                       | redis  | rest-storage:collections | The prefix for collections redis keys                                                                                                 |
+| deltaResourcesPrefix                    | redis  | delta:resources          | The prefix for delta resources redis keys                                                                                             |
+| deltaEtagsPrefix                        | redis  | delta:etags              | The prefix for delta etags redis keys                                                                                                 |
+| lockPrefix                              | redis  | rest-storage:locks       | The prefix for lock redis keys                                                                                                        |
+| resourceCleanupAmount                   | redis  | 100000                   | The maximum amount of resources to clean in a single cleanup run                                                                      |
+| resourceCleanupIntervalSec              | redis  |                          | The interval (in seconds) how often to peform the storage cleanup. When set to _null_ no periodic storage cleanup is peformed         |
+| rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
+| freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
 
 ### Configuration util
 

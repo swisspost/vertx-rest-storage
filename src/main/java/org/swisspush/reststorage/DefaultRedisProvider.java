@@ -6,6 +6,7 @@ import io.vertx.core.Vertx;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisConnection;
+import io.vertx.redis.client.RedisClientType;
 import io.vertx.redis.client.RedisOptions;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
@@ -42,7 +43,7 @@ public class DefaultRedisProvider implements RedisProvider {
 
     @Override
     public Future<RedisAPI> redis() {
-        if(redisAPI != null) {
+        if (redisAPI != null) {
             return Future.succeededFuture(redisAPI);
         } else {
             return setupRedisClient();
@@ -53,15 +54,15 @@ public class DefaultRedisProvider implements RedisProvider {
         return configuration.getRedisReconnectAttempts() != 0;
     }
 
-    private Future<RedisAPI> setupRedisClient(){
+    private Future<RedisAPI> setupRedisClient() {
         Promise<RedisAPI> currentPromise = Promise.promise();
         Promise<RedisAPI> masterPromise = connectPromiseRef.accumulateAndGet(
                 currentPromise, (oldVal, newVal) -> (oldVal != null) ? oldVal : newVal);
-        if( currentPromise == masterPromise ){
+        if (currentPromise == masterPromise) {
             // Our promise is THE promise. So WE have to resolve it.
             connectToRedis().onComplete(event -> {
                 connectPromiseRef.getAndSet(null);
-                if(event.failed()) {
+                if (event.failed()) {
                     currentPromise.fail(event.cause());
                 } else {
                     redisAPI = event.result();
@@ -89,13 +90,19 @@ public class DefaultRedisProvider implements RedisProvider {
         }
 
         if (connecting.compareAndSet(false, true)) {
-            redis = Redis.createClient(vertx, new RedisOptions()
-                    .setConnectionString(createConnectString())
+            RedisOptions redisOptions = new RedisOptions()
                     .setPassword((redisAuth == null ? "" : redisAuth))
                     .setMaxPoolSize(redisMaxPoolSize)
                     .setMaxPoolWaiting(redisMaxPoolWaitingSize)
                     .setPoolRecycleTimeout(redisPoolRecycleTimeoutMs)
-                    .setMaxWaitingHandlers(redisMaxPipelineWaitingSize));
+                    .setMaxWaitingHandlers(redisMaxPipelineWaitingSize);
+            if (configuration.isRedisClustered()) {
+                redisOptions.setType(RedisClientType.CLUSTER);
+                redisOptions.addConnectionString(createConnectString());
+            } else {
+                redisOptions.setConnectionString(createConnectString());
+            }
+            redis = Redis.createClient(vertx, redisOptions);
 
             redis.connect().onSuccess(conn -> {
                 log.info("Successfully connected to redis");

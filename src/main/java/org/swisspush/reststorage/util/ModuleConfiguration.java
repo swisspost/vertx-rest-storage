@@ -32,6 +32,7 @@ public class ModuleConfiguration {
     private String redisHost = "localhost";
     private int redisPort = 6379;
     private boolean redisEnableTls;
+    private boolean redisClustered;
     /**
      * @deprecated Instance authentication is considered as legacy. With Redis from 6.x on the ACL authentication method should be used.
      */
@@ -126,6 +127,11 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisEnableTls(boolean redisEnableTls) {
         this.redisEnableTls = redisEnableTls;
+        return this;
+    }
+
+    public ModuleConfiguration redisClustered(boolean redisClustered) {
+        this.redisClustered = redisClustered;
         return this;
     }
 
@@ -306,6 +312,10 @@ public class ModuleConfiguration {
 
     public boolean isRedisEnableTls() {
         return redisEnableTls;
+    }
+
+    public boolean isRedisClustered() {
+        return redisClustered;
     }
 
     public String getRedisAuth() {

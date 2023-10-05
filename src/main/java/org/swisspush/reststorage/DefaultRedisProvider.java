@@ -97,7 +97,7 @@ public class DefaultRedisProvider implements RedisProvider {
                     .setPoolRecycleTimeout(redisPoolRecycleTimeoutMs)
                     .setMaxWaitingHandlers(redisMaxPipelineWaitingSize);
             if (configuration.isRedisClustered()) {
-                redisOptions.setType(RedisClientType.CLUSTER);
+                redisOptions.setType(RedisClientType.REPLICATION);
                 redisOptions.addConnectionString(createConnectString());
             } else {
                 redisOptions.setConnectionString(createConnectString());
@@ -107,7 +107,7 @@ public class DefaultRedisProvider implements RedisProvider {
             redis.connect().onSuccess(conn -> {
                 log.info("Successfully connected to redis");
                 client = conn;
-                client.close();
+             //   client.close();
 
                 // make sure the client is reconnected on error
                 // eg, the underlying TCP connection is closed but the client side doesn't know it yet

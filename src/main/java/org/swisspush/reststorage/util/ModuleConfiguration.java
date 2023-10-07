@@ -1,9 +1,13 @@
 package org.swisspush.reststorage.util;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.vertx.core.json.JsonObject;
+import io.vertx.redis.client.RedisClientType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -11,6 +15,7 @@ import java.util.Map;
  *
  * @author https://github.com/mcweba [Marc-Andre Weber]
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ModuleConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ModuleConfiguration.class);
@@ -29,10 +34,10 @@ public class ModuleConfiguration {
     private String prefix = "";
     private String storageAddress = "resource-storage";
     private Map<String, String> editorConfig = null;
-    private String redisHost = "localhost";
-    private int redisPort = 6379;
+    private List<String> redisHosts = Collections.singletonList("localhost");
+    private List<Integer> redisPorts = Collections.singletonList(6379);
     private boolean redisEnableTls;
-    private boolean redisClustered;
+    private RedisClientType redisClientType = RedisClientType.STANDALONE;
     /**
      * @deprecated Instance authentication is considered as legacy. With Redis from 6.x on the ACL authentication method should be used.
      */
@@ -116,12 +121,22 @@ public class ModuleConfiguration {
     }
 
     public ModuleConfiguration redisHost(String redisHost) {
-        this.redisHost = redisHost;
+        this.redisHosts = Collections.singletonList(redisHost);
         return this;
     }
 
     public ModuleConfiguration redisPort(int redisPort) {
-        this.redisPort = redisPort;
+        this.redisPorts = Collections.singletonList(redisPort);
+        return this;
+    }
+
+    public ModuleConfiguration redisHosts(List<String> redisHosts) {
+        this.redisHosts = redisHosts;
+        return this;
+    }
+
+    public ModuleConfiguration redisPorts(List<Integer> redisPorts) {
+        this.redisPorts = redisPorts;
         return this;
     }
 
@@ -130,8 +145,8 @@ public class ModuleConfiguration {
         return this;
     }
 
-    public ModuleConfiguration redisClustered(boolean redisClustered) {
-        this.redisClustered = redisClustered;
+    public ModuleConfiguration redisClientType(RedisClientType redisClientType) {
+        this.redisClientType = redisClientType;
         return this;
     }
 
@@ -287,11 +302,18 @@ public class ModuleConfiguration {
     }
 
     public String getRedisHost() {
-        return redisHost;
+        return redisHosts.get(0);
+    }
+
+    public List<String> getRedisHosts() {
+        return redisHosts;
     }
 
     public int getRedisPort() {
-        return redisPort;
+        return redisPorts.get(0);
+    }
+    public List<Integer> getRedisPorts() {
+        return redisPorts;
     }
 
     public int getRedisReconnectAttempts() {
@@ -314,10 +336,6 @@ public class ModuleConfiguration {
         return redisEnableTls;
     }
 
-    public boolean isRedisClustered() {
-        return redisClustered;
-    }
-
     public String getRedisAuth() {
         return redisAuth;
     }
@@ -329,7 +347,9 @@ public class ModuleConfiguration {
     public String getRedisUser() {
         return redisUser;
     }
-
+    public RedisClientType getRedisClientType() {
+        return redisClientType;
+    }
     public String getExpirablePrefix() {
         return expirablePrefix;
     }

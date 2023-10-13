@@ -6,6 +6,7 @@ import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.Collections;
 import java.util.HashMap;
 
 import static org.swisspush.reststorage.util.ModuleConfiguration.StorageType;
@@ -272,8 +273,8 @@ public class ModuleConfigurationTest {
         json.put("prefix", "newprefix");
         json.put("storageAddress", "newStorageAddress");
         json.put("editorConfig", new JsonObject().put("myKey", "myValue"));
-        json.put("redisHost", "newredishost");
-        json.put("redisPort", 4321);
+        json.put("redisHosts", Collections.singletonList("newredishost"));
+        json.put("redisPorts", Collections.singletonList(4321));
         json.put("maxRedisWaitingHandlers", 4096);
         json.put("expirablePrefix", "newExpirablePrefix");
         json.put("resourcesPrefix", "newResourcesPrefix");

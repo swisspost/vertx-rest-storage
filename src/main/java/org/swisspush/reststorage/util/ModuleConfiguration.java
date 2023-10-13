@@ -337,10 +337,6 @@ public class ModuleConfiguration {
         return redisEnableTls;
     }
 
-    public boolean isRedisClustered() {
-        return redisClustered;
-    }
-
     public String getRedisAuth() {
         return redisAuth;
     }

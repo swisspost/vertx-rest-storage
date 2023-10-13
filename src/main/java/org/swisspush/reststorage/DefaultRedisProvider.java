@@ -100,7 +100,6 @@ public class DefaultRedisProvider implements RedisProvider {
                     .setType(configuration.getRedisClientType());
 
             createConnectStrings().forEach(redisOptions::addConnectionString);
-
             redis = Redis.createClient(vertx, redisOptions);
 
             redis.connect().onSuccess(conn -> {

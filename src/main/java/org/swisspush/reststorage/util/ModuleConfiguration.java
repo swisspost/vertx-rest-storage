@@ -38,6 +38,7 @@ public class ModuleConfiguration {
     private List<Integer> redisPorts = Collections.singletonList(6379);
     private boolean redisEnableTls;
     private RedisClientType redisClientType = RedisClientType.STANDALONE;
+
     /**
      * @deprecated Instance authentication is considered as legacy. With Redis from 6.x on the ACL authentication method should be used.
      */
@@ -334,6 +335,10 @@ public class ModuleConfiguration {
 
     public boolean isRedisEnableTls() {
         return redisEnableTls;
+    }
+
+    public boolean isRedisClustered() {
+        return redisClustered;
     }
 
     public String getRedisAuth() {

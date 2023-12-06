@@ -403,7 +403,7 @@
         </profile>
     </profiles>
     <properties>
-        <vertx.version>4.2.1</vertx.version>
+        <vertx.version>4.3.8</vertx.version>
         <vertx-redis-client.version>4.3.3</vertx-redis-client.version>
         <slf4j.version>1.7.32</slf4j.version>
         <junit.version>4.12</junit.version>

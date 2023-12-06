@@ -406,7 +406,7 @@
         <vertx.version>4.2.1</vertx.version>
         <vertx-redis-client.version>4.3.3</vertx-redis-client.version>
         <slf4j.version>1.7.32</slf4j.version>
-        <junit.version>4.12</junit.version>
+        <junit.version>4.13.1</junit.version>
         <jackson.version>2.16.0</jackson.version>
         <hamcrest.version>1.3</hamcrest.version>
         <commons-codec.version>1.9</commons-codec.version>

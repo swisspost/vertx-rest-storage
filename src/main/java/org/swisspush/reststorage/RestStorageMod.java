@@ -15,8 +15,7 @@ public class RestStorageMod extends AbstractVerticle {
 
     private RedisProvider redisProvider;
 
-    public RestStorageMod() {
-    }
+    public RestStorageMod() {}
 
     public RestStorageMod(RedisProvider redisProvider) {
         this.redisProvider = redisProvider;
@@ -42,7 +41,7 @@ public class RestStorageMod extends AbstractVerticle {
                             new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
                             promise.complete();
                         } else {
-                            promise.fail(result.cause());
+                            promise.fail(new Exception(result.cause()));
                         }
                     });
                 } else {
@@ -65,7 +64,7 @@ public class RestStorageMod extends AbstractVerticle {
                     if(event.succeeded()){
                         promise.complete(event.result());
                     } else {
-                        promise.fail(event.cause());
+                        promise.fail(new Exception(event.cause()));
                     }
                 });
                 break;
@@ -87,7 +86,7 @@ public class RestStorageMod extends AbstractVerticle {
             if(event.succeeded()) {
                 initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider));
             } else {
-                initPromise.fail(event.cause());
+                initPromise.fail(new Exception(event.cause()));
             }
         });
 

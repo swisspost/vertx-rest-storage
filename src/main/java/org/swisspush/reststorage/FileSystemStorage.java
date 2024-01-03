@@ -47,7 +47,7 @@ public class FileSystemStorage implements Storage {
 
         // Cache string length of root without trailing slashes
         int rootLen;
-        for( rootLen=tmpRoot.length()-1 ; tmpRoot.charAt(rootLen) == File.separatorChar ; --rootLen );
+        for( rootLen=tmpRoot.length()-1 ; tmpRoot.charAt(rootLen) == '/' ; --rootLen );
         this.rootLen = rootLen;
     }
 
@@ -61,45 +61,68 @@ public class FileSystemStorage implements Storage {
         final String fullPath = canonicalize(path);
         log.debug("GET {}", path);
         fileSystem().exists(fullPath, booleanAsyncResult -> {
-            if (booleanAsyncResult.result()) {
-                fileSystem().props(fullPath, filePropsAsyncResult -> {
-                    final FileProps props = filePropsAsyncResult.result();
-                    if (props.isDirectory()) {
-                        log.debug("Delegate directory listing of '{}'", path);
-                        fileSystemDirLister.handleListingRequest(path, offset, count, handler);
-                    } else if (props.isRegularFile()) {
-                        log.debug("Open file '{}' ({})", path, fullPath);
-                        fileSystem().open(fullPath, OPEN_OPTIONS_READ_ONLY, event1 -> {
-                            DocumentResource d = new DocumentResource();
-                            if (event1.failed()) {
-                                log.warn("Failed to open '{}' for read", path, event1.cause());
-                                d.error = true;
-                                d.errorMessage = event1.cause().getMessage();
-                            } else {
-                                log.debug("Successfully opened '{}' which is {} bytes in size.", path, props.size());
-                                d.length = props.size();
-                                d.readStream = new LoggingFileReadStream(d.length, path, event1.result());
-                                d.closeHandler = v -> {
-                                    log.debug("Resource got closed. Close file now '{}'", path);
-                                    event1.result().close();
-                                };
-                            }
-                            handler.handle(d);
-                        });
-                    } else {
-                        // Is it a link maybe? Block device? Char device?
-                        log.warn("Unknown filetype. Report 'no such file' for '{}'", path);
-                        Resource r = new Resource();
-                        r.exists = false;
-                        handler.handle(r);
-                    }
-                });
-            } else {
+            if( booleanAsyncResult.failed() ){
+                String msg = "vertx.fileSystem().exists()";
+                if( log.isWarnEnabled() ){
+                    log.warn(msg, new Exception(fullPath, booleanAsyncResult.cause()));
+                }
+                Resource r = new Resource();
+                r.error = true;
+                r.errorMessage = msg +": "+ booleanAsyncResult.cause().getMessage();
+                handler.handle(r);
+                return;
+            }
+            var result = booleanAsyncResult.result();
+            if( result == null ){
                 log.debug("No such file '{}' ({})", path, fullPath);
                 Resource r = new Resource();
                 r.exists = false;
                 handler.handle(r);
+                return;
             }
+            fileSystem().props(fullPath, filePropsAsyncResult -> {
+                if( filePropsAsyncResult.failed() ){
+                    String msg = "vertx.fileSystem().props()";
+                    if( log.isWarnEnabled() ){
+                        log.warn(msg, new Exception(fullPath, filePropsAsyncResult.cause()));
+                    }
+                    Resource r = new Resource();
+                    r.error = true;
+                    r.errorMessage = msg +": "+ filePropsAsyncResult.cause().getMessage();
+                    handler.handle(r);
+                    return;
+                }
+                final FileProps props = filePropsAsyncResult.result();
+                if (props.isDirectory()) {
+                    log.debug("Delegate directory listing of '{}'", path);
+                    fileSystemDirLister.handleListingRequest(path, offset, count, handler);
+                } else if (props.isRegularFile()) {
+                    log.debug("Open file '{}' ({})", path, fullPath);
+                    fileSystem().open(fullPath, OPEN_OPTIONS_READ_ONLY, event1 -> {
+                        DocumentResource d = new DocumentResource();
+                        if (event1.failed()) {
+                            log.warn("Failed to open '{}' for read", path, event1.cause());
+                            d.error = true;
+                            d.errorMessage = event1.cause().getMessage();
+                        } else {
+                            log.debug("Successfully opened '{}' which is {} bytes in size.", path, props.size());
+                            d.length = props.size();
+                            d.readStream = new LoggingFileReadStream<>(d.length, path, event1.result());
+                            d.closeHandler = v -> {
+                                log.debug("Resource got closed. Close file now '{}'", path);
+                                event1.result().close();
+                            };
+                        }
+                        handler.handle(d);
+                    });
+                } else {
+                    // Is it a link maybe? Block device? Char device?
+                    log.warn("Unknown filetype. Report 'no such file' for '{}'", path);
+                    Resource r = new Resource();
+                    r.exists = false;
+                    handler.handle(r);
+                }
+            });
         });
     }
 

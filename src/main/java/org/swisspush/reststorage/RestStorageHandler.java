@@ -63,7 +63,10 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
 
         Result<Boolean, String> result = checkHttpAuthenticationConfiguration(config);
         if(result.isErr()) {
-            router.route().handler(ctx -> respondWith(ctx.response(), StatusCode.INTERNAL_SERVER_ERROR, "ERR_hXECANxwAgCUQIAK: " + result.getErr()));
+            router.route().handler(ctx -> {
+                log.warn("router.route()", new Exception(result.getErr()));
+                respondWith(ctx.response(), StatusCode.INTERNAL_SERVER_ERROR, result.getErr());
+            });
         } else if (result.getOk()) {
             AuthenticationProvider authProvider = new ModuleConfigurationAuthentication(config);
                 router.route().handler(BasicAuthHandler.create(authProvider));
@@ -602,8 +605,8 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                     }
                     ResourceNameUtil.replaceColonsAndSemiColonsInList(subResourceNames);
                 } catch (RuntimeException ex) {
-                    log.warn("Happy stacktrace just for you", ex);
-                    respondWithBadRequest(ctx.request(), "Bad Request: Unable to parse body of storageExpand POST request: "+ ex.getMessage());
+                    log.warn("KISS handler is not interested in error details. I'll report them here then.", ex);
+                    respondWithBadRequest(ctx.request(), "Bad Request: Unable to parse body of storageExpand POST request");
                     return;
                 }
 

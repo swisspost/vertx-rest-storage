@@ -1,13 +1,19 @@
 package org.swisspush.reststorage;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import static org.slf4j.LoggerFactory.getLogger;
+
 public class MimeTypeResolver {
 
+    private static final Logger log = getLogger(MimeTypeResolver.class);
     private Map<String, String> mimeTypes = new HashMap<>();
     
     private final String defaultMimeType;
@@ -23,8 +29,8 @@ public class MimeTypeResolver {
         } finally {
             try {
                 in.close();
-            } catch (IOException e) {
-                // Ignore
+            } catch (IOException ex) {
+                log.debug("close() failed", ex);
             }
         }
         

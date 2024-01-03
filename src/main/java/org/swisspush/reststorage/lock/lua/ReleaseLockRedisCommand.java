@@ -37,25 +37,33 @@ public class ReleaseLockRedisCommand implements RedisCommand {
         args.addAll(keys);
         args.addAll(arguments);
 
-        redisProvider.redis().onSuccess(redisAPI -> redisAPI.evalsha(args, event -> {
-            if (event.succeeded()) {
-                Long unlocked = event.result().toLong();
-                promise.complete(unlocked > 0);
-            } else {
-                String message = event.cause().getMessage();
-                if (message != null && message.startsWith("NOSCRIPT")) {
-                    log.warn("ReleaseLockRedisCommand script couldn't be found, reload it");
-                    log.warn("amount the script got loaded: " + executionCounter);
-                    if (executionCounter > 10) {
-                        promise.fail("amount the script got loaded is higher than 10, we abort");
-                    } else {
-                        luaScriptState.loadLuaScript(new ReleaseLockRedisCommand(luaScriptState, keys,
-                                arguments, redisProvider, log, promise), executionCounter);
-                    }
-                } else {
-                    promise.fail("ReleaseLockRedisCommand request failed with message: " + message);
-                }
+        redisProvider.redis().onComplete( redisEv -> {
+            if( redisEv.failed() ){
+                promise.fail(new Exception("redisProvider.redis()", redisEv.cause()));
+                return;
             }
-        })).onFailure(throwable -> promise.fail("Redis: ReleaseLockRedisCommand request failed with error: " + throwable.getMessage()));
+            var redisAPI = redisEv.result();
+            redisAPI.evalsha(args, shaEv -> {
+                if( shaEv.failed() ){
+                    Throwable ex = shaEv.cause();
+                    String message = ex.getMessage();
+                    if (message != null && message.startsWith("NOSCRIPT")) {
+                        log.warn("ReleaseLockRedisCommand script couldn't be found, reload it", ex);
+                        log.warn("amount the script got loaded: " + executionCounter);
+                        if (executionCounter > 10) {
+                            promise.fail("amount the script got loaded is higher than 10, we abort");
+                        } else {
+                            luaScriptState.loadLuaScript(new ReleaseLockRedisCommand(luaScriptState, keys,
+                                    arguments, redisProvider, log, promise), executionCounter);
+                        }
+                    } else {
+                        promise.fail(new Exception("ReleaseLockRedisCommand request failed", ex));
+                    }
+                    return;
+                }
+                Long unlocked = shaEv.result().toLong();
+                promise.complete(unlocked > 0);
+            });
+        });
     }
 }

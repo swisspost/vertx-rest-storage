@@ -34,7 +34,7 @@ public class GZIPUtil {
             try (GZIPOutputStream os = new GZIPOutputStream(baos)) {
                 os.write(uncompressedData);
             } catch (IOException ioe) {
-                log.error("Unable to compress resource: " + ioe.getMessage());
+                log.debug("Unable to compress resource: {}", ioe.getMessage());
                 future.fail(ioe);
                 // Error, exit
                 return;
@@ -69,7 +69,7 @@ public class GZIPUtil {
                 baos.close();
 
             } catch (IOException ioe) {
-                log.error("Unable to decompress resource: " + ioe.getMessage());
+                log.debug("Unable to decompress resource: {}", ioe.getMessage());
                 future.fail(ioe);
                 // Error, exit
                 return;

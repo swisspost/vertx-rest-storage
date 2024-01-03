@@ -7,12 +7,13 @@ local resourceCount = 0
 local resourcesSize = 0
 
 local function analyzeChildrenAndItself(path)
-    if redis.call('exists',resourcesPrefix..path) == 1 then
-      local res_size = redis.call('hget', resourcesPrefix..path, 'resource')
+    local pathAbs = resourcesPrefix .. path
+    if redis.call('exists',pathAbs) == 1 then
+      local res_size = redis.call('hget', pathAbs, 'resource')
       resourceCount = resourceCount + 1
       resourcesSize = resourcesSize + string.len(res_size)
-    elseif redis.call('exists',collectionsPrefix..path) == 1 then
-      local members = redis.call('zrangebyscore',collectionsPrefix..path,'-inf','+inf')
+    elseif redis.call('exists',pathAbs) == 1 then
+      local members = redis.call('zrangebyscore',pathAbs,'-inf','+inf')
       for key,value in pairs(members) do
         local pathToAnalyze = path..":"..value
         analyzeChildrenAndItself(pathToAnalyze)

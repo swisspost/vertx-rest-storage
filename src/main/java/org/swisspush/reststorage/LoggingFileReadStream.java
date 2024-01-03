@@ -4,18 +4,19 @@ import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.AsyncFile;
 import io.vertx.core.file.impl.AsyncFileImpl;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.vertx.core.streams.ReadStream;
+import org.slf4j.Logger;
+
+import static org.slf4j.LoggerFactory.getLogger;
 
 
 /**
  * Decorator with the purpose to log what's going on in a reading stream of an
  * {@link AsyncFile}.
  */
-public class LoggingFileReadStream implements ReadStream {
+public class LoggingFileReadStream<T> implements ReadStream<T> {
 
-    private static final Logger logger = LoggerFactory.getLogger(LoggingFileReadStream.class);
+    private static final Logger log = getLogger(LoggingFileReadStream.class);
     private final long expectedSize;
     private final String path;
     private final AsyncFile delegate;
@@ -37,22 +38,22 @@ public class LoggingFileReadStream implements ReadStream {
     }
 
     @Override
-    public ReadStream exceptionHandler(Handler handler) {
-        logger.trace("exceptionHandler registered for reading '{}'", path);
-        delegate.exceptionHandler(ex -> {
-            logger.debug("Got an exception at offset {} ({} bytes remaining) for '{}': {}",
-                    writtenBytes, expectedSize - writtenBytes, path, ex.getMessage());
+    public ReadStream<T> exceptionHandler(Handler<Throwable> handler) {
+        log.trace("exceptionHandler registered for reading '{}'", path);
+        delegate.exceptionHandler( ex -> {
+            log.debug("Got an exception at offset {} ({} bytes remaining) for '{}'",
+                    writtenBytes, expectedSize - writtenBytes, path, ex);
             handler.handle(ex);
         });
         return this;
     }
 
     @Override
-    public ReadStream handler(Handler handler) {
-        logger.trace("handler registered");
+    public ReadStream<T> handler(Handler handler) {
+        log.trace("handler registered");
         delegate.handler(buf -> {
             if (weShouldLogThatChunk(buf)) {
-                logger.debug("Read {} bytes at offset {} of total {} from '{}'",
+                log.debug("Read {} bytes at offset {} of total {} from '{}'",
                         buf.length(), writtenBytes, expectedSize, path);
             }
             writtenBytes += buf.length();
@@ -62,30 +63,30 @@ public class LoggingFileReadStream implements ReadStream {
     }
 
     @Override
-    public ReadStream pause() {
-        logger.debug("Pause reading at offset {} for '{}'", writtenBytes, path);
+    public ReadStream<T> pause() {
+        log.debug("Pause reading at offset {} for '{}'", writtenBytes, path);
         delegate.pause();
         return this;
     }
 
     @Override
-    public ReadStream resume() {
-        logger.debug("Resume reading at offset {} for '{}'", writtenBytes, path);
+    public ReadStream<T> resume() {
+        log.debug("Resume reading at offset {} for '{}'", writtenBytes, path);
         delegate.resume();
         return this;
     }
 
     @Override
     public ReadStream fetch(long amount) {
-        logger.debug("fetch amount {}", amount);
+        log.debug("fetch amount {}", amount);
         return delegate.fetch(amount);
     }
 
     @Override
-    public ReadStream endHandler(Handler endHandler) {
-        logger.trace("endHandler registered.");
+    public ReadStream<T> endHandler(Handler<Void> endHandler) {
+        log.trace("endHandler registered.");
         delegate.endHandler(aVoid -> {
-            logger.debug("End handler called ({} bytes remaining) for '{}'", expectedSize - writtenBytes, path);
+            log.debug("End handler called ({} bytes remaining) for '{}'", expectedSize - writtenBytes, path);
             endHandler.handle(aVoid);
         });
         return this;
@@ -96,7 +97,7 @@ public class LoggingFileReadStream implements ReadStream {
      */
     private boolean weShouldLogThatChunk(Buffer buf) {
 
-        if (logger.isTraceEnabled()) {
+        if (log.isTraceEnabled()) {
             // Simply log everything.
             return true;
         }

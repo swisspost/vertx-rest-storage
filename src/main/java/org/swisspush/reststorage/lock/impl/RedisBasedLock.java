@@ -30,6 +30,7 @@ public class RedisBasedLock implements Lock {
     private final Logger log = LoggerFactory.getLogger(RedisBasedLock.class);
 
     public static final String STORAGE_PREFIX = "rest-storage-lock:";
+    private static final String[] EMPTY_STRING_ARRAY = new String[0];
 
     private final LuaScriptState releaseLockLuaScriptState;
     private final RedisProvider redisProvider;
@@ -45,8 +46,21 @@ public class RedisBasedLock implements Lock {
         if (nx) {
             options.add("NX");
         }
-        redisProvider.redis().onSuccess(redisAPI -> redisAPI.send(Command.SET, RedisUtils.toPayload(key, value, options).toArray(new String[0]))
-                .onComplete(handler)).onFailure(throwable -> handler.handle(new FailedAsyncResult<>(throwable)));
+        redisProvider.redis().onComplete( redisEv -> {
+            if( redisEv.failed() ){
+                handler.handle(new FailedAsyncResult<>(new Exception("redisProvider.redis()", redisEv.cause())));
+                return;
+            }
+            var redisAPI = redisEv.result();
+            String[] payload = RedisUtils.toPayload(key, value, options).toArray(EMPTY_STRING_ARRAY);
+            redisAPI.send(Command.SET, payload).onComplete( ev -> {
+                if( ev.failed() ){
+                    handler.handle(new FailedAsyncResult<>(new Exception("redisAPI.send(SET, ...)", ev.cause())));
+                }else{
+                    handler.handle(ev);
+                }
+            });
+        });
     }
 
     @Override
@@ -60,7 +74,7 @@ public class RedisBasedLock implements Lock {
                     promise.complete(false);
                 }
             } else {
-                promise.fail(event.cause().getMessage());
+                promise.fail(new Exception("stacktrace", event.cause()));
             }
         });
         return promise.future();

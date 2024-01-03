@@ -6,8 +6,8 @@ import io.vertx.core.file.FileProps;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.file.FileSystemException;
 import io.vertx.core.file.OpenOptions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+//import org.slf4j.Logger;
+//import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.util.LockMode;
 
 import java.io.File;
@@ -27,7 +27,28 @@ public class FileSystemStorage implements Storage {
     private final int rootLen;
     private final FileSystemDirLister fileSystemDirLister;
 
-    private final Logger log = LoggerFactory.getLogger(FileSystemStorage.class);
+    //private final Logger log = LoggerFactory.getLogger(FileSystemStorage.class);
+    private final MyFancyLogger log = new MyFancyLogger();
+    private static class MyFancyLogger {
+        private static final String prefix = "LOG_FileSystemStorage_LOG: ";
+        private void debug(String fmt, String a1) { debug(fmt, a1, ""); }
+        private void debug(String fmt, String a1, Object a2) {
+            System.err.println(prefix + fmt.replaceFirst("\\{}", a1).replaceFirst("\\{}", String.valueOf(a2)));
+            if(a2 instanceof Throwable) ((Throwable)a2).printStackTrace(System.err);
+        }
+        private boolean isWarnEnabled() { return true; }
+        private void warn(String fmt, Throwable ex) { warn(fmt, "", ex); }
+        private void warn(String fmt, String a1) { warn(fmt, a1, null); }
+        private void warn(String fmt) { System.err.println(prefix + fmt); }
+        private void warn(String fmt, String a1, Throwable ex) {
+            System.err.println(prefix + fmt.replaceFirst("\\{}", a1));
+            if(ex != null) ex.printStackTrace(System.err);
+        }
+        private void error(String fmt, Throwable ex) {
+            System.err.println(prefix + fmt);
+            if(ex != null) ex.printStackTrace(System.err);
+        }
+    }
 
     public FileSystemStorage(Vertx vertx, String root) {
         this.vertx = vertx;

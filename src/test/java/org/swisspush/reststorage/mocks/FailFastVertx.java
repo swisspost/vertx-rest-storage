@@ -8,10 +8,7 @@ import io.vertx.core.dns.DnsClient;
 import io.vertx.core.dns.DnsClientOptions;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.file.FileSystem;
-import io.vertx.core.http.HttpClient;
-import io.vertx.core.http.HttpClientOptions;
-import io.vertx.core.http.HttpServer;
-import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.http.*;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetClientOptions;
 import io.vertx.core.net.NetServer;
@@ -72,6 +69,16 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
+    public WebSocketClient createWebSocketClient(WebSocketClientOptions options) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public HttpClientBuilder httpClientBuilder() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public HttpClient createHttpClient(HttpClientOptions httpClientOptions) {
         throw new UnsupportedOperationException(msg);
     }
@@ -122,6 +129,11 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
+    public Timer timer(long delay, TimeUnit unit) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public long setTimer(long l, Handler<Long> handler) {
         throw new UnsupportedOperationException(msg);
     }
@@ -137,7 +149,17 @@ public class FailFastVertx implements Vertx {
     }
 
     @Override
+    public long setPeriodic(long initialDelay, long delay, Handler<Long> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public TimeoutStream periodicStream(long l) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public TimeoutStream periodicStream(long initialDelay, long delay) {
         throw new UnsupportedOperationException(msg);
     }
 
@@ -308,6 +330,11 @@ public class FailFastVertx implements Vertx {
 
     @Override
     public boolean isNativeTransportEnabled() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Throwable unavailableNativeTransportCause() {
         throw new UnsupportedOperationException(msg);
     }
 

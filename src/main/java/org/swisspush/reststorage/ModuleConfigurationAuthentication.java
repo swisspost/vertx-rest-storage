@@ -8,10 +8,13 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.auth.authentication.Credentials;
 import io.vertx.ext.auth.authentication.UsernamePasswordCredentials;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.Objects;
-import java.util.logging.Logger;
+
+import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Custom implementation of a {@link AuthenticationProvider} using credentials from {@link ModuleConfiguration}
@@ -20,7 +23,7 @@ import java.util.logging.Logger;
  */
 public class ModuleConfigurationAuthentication implements AuthenticationProvider {
 
-    private final static Logger logger = Logger.getLogger(ModuleConfigurationAuthentication.class.getName());
+    private final static Logger logger = getLogger(ModuleConfigurationAuthentication.class);
 
     private static final String INVALID_CREDENTIALS = "invalid credentials";
 
@@ -43,7 +46,7 @@ public class ModuleConfigurationAuthentication implements AuthenticationProvider
         String password = configuration.getHttpRequestHandlerPassword();
 
         if (StringUtil.isNullOrEmpty(username) || StringUtil.isNullOrEmpty(password)) {
-            logger.warning("Credentials are missing/empty");
+            logger.warn("Credentials are missing/empty");
             this.user = null;
         } else {
             this.user = new User(username, password);

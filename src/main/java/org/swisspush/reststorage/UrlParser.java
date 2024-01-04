@@ -1,6 +1,12 @@
 package org.swisspush.reststorage;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
 public class UrlParser {
+
+    private static final Logger log = LoggerFactory.getLogger(UrlParser.class);
 
     public static RestStorageHandler.OffsetLimit offsetLimit(String offsetFromUrl, String limitFromUrl) {
         RestStorageHandler.OffsetLimit offsetValues = new RestStorageHandler.OffsetLimit(0, -1);
@@ -22,8 +28,8 @@ public class UrlParser {
             try {
                 limit = Integer.parseInt(limitFromUrl);
                 limit = Math.max(limit, -1);
-            } catch (Exception e) {
-                // do nothing here
+            } catch (Exception ex) {
+                log.debug("TODO error handling", ex);
             }
         }
         

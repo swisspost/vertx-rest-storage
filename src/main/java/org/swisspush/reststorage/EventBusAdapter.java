@@ -13,6 +13,8 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.HostAndPort;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
@@ -23,12 +25,16 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.slf4j.LoggerFactory.getLogger;
+
 /**
  * Provides a direct eventbus interface.
  *
  * @author lbovet
  */
 public class EventBusAdapter {
+
+    private static final Logger log = getLogger(EventBusAdapter.class);
 
     public void init(final Vertx vertx, String address, final Handler<HttpServerRequest> requestHandler) {
         vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> requestHandler.handle(new MappedHttpServerRequest(vertx, message)));
@@ -482,11 +488,15 @@ public class EventBusAdapter {
 
                     @Override
                     public HttpServerResponse drainHandler(Handler<Void> voidHandler) {
+                        log.warn("I wish you a happy timeout as this method ignores drainHandler anyway.",
+                                new Exception("may this stacktrace help you"));
                         return this;
                     }
 
                     @Override
                     public HttpServerResponse exceptionHandler(Handler<Throwable> throwableHandler) {
+                        log.warn("I wish you a happy debugging session as this method ignores exceptionHandler anyway.",
+                                new Exception("may this stacktrace help you"));
                         return this;
                     }
                 };
@@ -688,6 +698,8 @@ public class EventBusAdapter {
 
         @Override
         public HttpServerRequest exceptionHandler(Handler<Throwable> throwableHandler) {
+            log.warn("I wish you happy time wasting, as this method just ignores your exceptionHandler",
+                    new Exception("may this stacktrace help you"));
             return this;
         }
 

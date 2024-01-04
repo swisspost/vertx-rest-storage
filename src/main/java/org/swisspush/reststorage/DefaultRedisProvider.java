@@ -102,7 +102,13 @@ public class DefaultRedisProvider implements RedisProvider {
             createConnectStrings().forEach(redisOptions::addConnectionString);
             redis = Redis.createClient(vertx, redisOptions);
 
-            redis.connect().onSuccess(conn -> {
+            redis.connect().onComplete( ev -> {
+                if( ev.failed() ) {
+                    promise.fail(new Exception("redis.connect()", ev.cause()));
+                    connecting.set(false);
+                    return;
+                }
+                var conn = ev.result();
                 log.info("Successfully connected to redis");
                 client = conn;
 
@@ -114,22 +120,25 @@ public class DefaultRedisProvider implements RedisProvider {
                 // eg, the underlying TCP connection is closed but the client side doesn't know it yet
                 // the client tries to use the staled connection to talk to server. An exceptions will be raised
                 if (reconnectEnabled()) {
-                    conn.exceptionHandler(e -> attemptReconnect(0));
+                    conn.exceptionHandler(ex -> {
+                        log.warn("redis connection reports problem", ex);
+                        attemptReconnect(0);
+                    });
                 }
 
                 // make sure the client is reconnected on connection close
                 // eg, the underlying TCP connection is closed with normal 4-Way-Handshake
                 // this handler will be notified instantly
                 if (reconnectEnabled()) {
-                    conn.endHandler(placeHolder -> attemptReconnect(0));
+                    conn.endHandler(nothing -> {
+                        log.warn("redis connection got closed");
+                        attemptReconnect(0);
+                    });
                 }
 
                 // allow further processing
                 redisAPI = RedisAPI.api(conn);
                 promise.complete(redisAPI);
-                connecting.set(false);
-            }).onFailure(t -> {
-                promise.fail(t);
                 connecting.set(false);
             });
         } else {

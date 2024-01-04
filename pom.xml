@@ -42,7 +42,7 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-redis-client</artifactId>
-            <version>${vertx-redis-client.version}</version>
+            <version>${vertx.version}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
@@ -404,7 +404,6 @@
     </profiles>
     <properties>
         <vertx.version>4.5.1</vertx.version>
-        <vertx-redis-client.version>4.5.1</vertx-redis-client.version>
         <slf4j.version>2.0.10</slf4j.version>
         <junit.version>4.13.2</junit.version>
         <jackson.version>2.16.0</jackson.version>

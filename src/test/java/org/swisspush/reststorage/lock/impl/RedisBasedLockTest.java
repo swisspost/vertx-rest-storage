@@ -1,6 +1,5 @@
 package org.swisspush.reststorage.lock.impl;
 
-import com.jayway.awaitility.Duration;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.net.NetClientOptions;
@@ -19,8 +18,10 @@ import org.junit.runner.RunWith;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
-import static com.jayway.awaitility.Awaitility.await;
+import java.time.Duration;
+
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Tests for the {@link RedisBasedLock} class
@@ -246,6 +247,6 @@ public class RedisBasedLockTest {
     }
 
     private void waitMaxUntilExpired(String key, long expireMs){
-        await().pollInterval(50, MILLISECONDS).atMost(new Duration(expireMs, MILLISECONDS)).until(() -> !jedis.exists(key));
+        await().pollInterval(50, MILLISECONDS).atMost(Duration.ofMillis(expireMs)).until(() -> !jedis.exists(key));
     }
 }

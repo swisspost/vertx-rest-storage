@@ -12,9 +12,9 @@ import org.swisspush.reststorage.util.StatusCode;
 import java.util.HashMap;
 import java.util.Map;
 
-import static com.jayway.awaitility.Awaitility.await;
 import static io.restassured.RestAssured.*;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.core.Is.is;
 

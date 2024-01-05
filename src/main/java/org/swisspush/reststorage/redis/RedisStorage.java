@@ -138,8 +138,12 @@ public class RedisStorage implements Storage {
         vertx.setPeriodic(intervalMs, event -> lock.acquireLock(STORAGE_CLEANUP_TASK_LOCK,
                         token(STORAGE_CLEANUP_TASK_LOCK), lockExpiry(resourceCleanupIntervalSec))
                 .onComplete(lockEvent -> {
-                    if( lockEvent.failed() || !lockEvent.result() ){
+                    if( lockEvent.failed() ){
                         log.error("Could not acquire lock '{}'.", STORAGE_CLEANUP_TASK_LOCK, lockEvent.cause());
+                        return;
+                    }
+                    if( !lockEvent.result() ){
+                        log.debug("Lock already taken '{}'", STORAGE_CLEANUP_TASK_LOCK);
                         return;
                     }
                     cleanup(cleanupEvent -> {

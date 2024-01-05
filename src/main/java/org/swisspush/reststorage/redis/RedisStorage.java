@@ -1269,7 +1269,7 @@ public class RedisStorage implements Storage {
         try {
             cleanupResourcesAmountUsed = Long.parseLong(cleanupResourcesAmountStr);
         } catch (Exception e) {
-            log.error("Why the heck is this ignored?!?", e);
+            log.error("Got invalid response. Number expected but got {}", cleanupResourcesAmountStr, e);
         }
         cleanupRecursive(handler, 0, cleanupResourcesAmountUsed, CLEANUP_BULK_SIZE);
     }

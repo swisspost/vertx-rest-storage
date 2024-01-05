@@ -223,7 +223,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                             sortedNames.forEach(array::add);
                             log.trace("RestStorageHandler return collection: {}", sortedNames);
                             String body = new JsonObject().put(collectionName, array).encode();
-                            /* TODO WTF?!?
+                            /* TODO Check implementation
                              * Why do we use 'String#length()' here? Just imagine what happens if that JSON
                              * contains any char above codepoint 127. */
                             if( log.isWarnEnabled() ){

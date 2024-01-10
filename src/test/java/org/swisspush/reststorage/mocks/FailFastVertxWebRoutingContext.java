@@ -173,7 +173,17 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
-    public Set<FileUpload> fileUploads() {
+    public RequestBody body() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public List<FileUpload> fileUploads() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void cancelAndCleanupFileUploads() {
         throw new UnsupportedOperationException(msg);
     }
 

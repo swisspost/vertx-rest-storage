@@ -1,7 +1,6 @@
 
 package org.swisspush.reststorage;
 
-import com.jayway.awaitility.Duration;
 import io.restassured.RestAssured;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
@@ -10,10 +9,11 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 
+import java.time.Duration;
 import java.util.List;
 
-import static com.jayway.awaitility.Awaitility.await;
 import static io.restassured.RestAssured.*;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItems;
 
@@ -564,10 +564,10 @@ public class CrudIntegrationTest extends RedisStorageIntegrationTestCase {
     }
 
     private void checkGETStatusCodeWithAwait5sec(final String request, final Integer statusCode) {
-        await().atMost(Duration.FIVE_SECONDS).until(() -> String.valueOf(when().get(request).getStatusCode()), equalTo(String.valueOf(statusCode)));
+        await().atMost(Duration.ofSeconds(5)).until(() -> String.valueOf(when().get(request).getStatusCode()), equalTo(String.valueOf(statusCode)));
     }
 
     private void checkGETStatusCodeWithAwait5secNoUrlEncoding(final String request, final Integer statusCode) {
-        await().atMost(Duration.FIVE_SECONDS).until(() -> String.valueOf(given().urlEncodingEnabled(false).when().get(request).getStatusCode()), equalTo(String.valueOf(statusCode)));
+        await().atMost(Duration.ofSeconds(5)).until(() -> String.valueOf(given().urlEncodingEnabled(false).when().get(request).getStatusCode()), equalTo(String.valueOf(statusCode)));
     }
 }

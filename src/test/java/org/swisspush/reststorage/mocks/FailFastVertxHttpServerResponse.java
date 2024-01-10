@@ -8,6 +8,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.Cookie;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.net.HostAndPort;
 
 import java.util.Set;
 
@@ -173,6 +174,16 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
+    public Future<Void> writeEarlyHints(MultiMap headers) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void writeEarlyHints(MultiMap headers, Handler<AsyncResult<Void>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public Future<Void> end(String chunk) {
         throw new UnsupportedOperationException(msg);
     }
@@ -279,6 +290,11 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
 
     @Override
     public HttpServerResponse push(HttpMethod method, String host, String path, MultiMap headers, Handler<AsyncResult<HttpServerResponse>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<HttpServerResponse> push(HttpMethod method, HostAndPort authority, String path, MultiMap headers) {
         throw new UnsupportedOperationException(msg);
     }
 

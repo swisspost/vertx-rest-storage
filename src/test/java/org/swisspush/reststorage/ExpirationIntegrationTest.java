@@ -9,9 +9,9 @@ import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.jayway.awaitility.Awaitility.await;
-import static com.jayway.awaitility.Duration.TWO_SECONDS;
 import static io.restassured.RestAssured.*;
+import static org.awaitility.Awaitility.await;
+import static org.awaitility.Durations.TWO_SECONDS;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.core.IsEqual.equalTo;

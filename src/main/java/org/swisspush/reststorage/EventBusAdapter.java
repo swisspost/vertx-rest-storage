@@ -10,15 +10,18 @@ import io.vertx.core.http.impl.HttpServerRequestInternal;
 import io.vertx.core.http.impl.headers.HeadersMultiMap;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.net.HostAndPort;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.slf4j.LoggerFactory.getLogger;
@@ -36,7 +39,7 @@ public class EventBusAdapter {
         vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> requestHandler.handle(new MappedHttpServerRequest(vertx, message)));
     }
 
-    private static class MappedHttpServerRequest implements HttpServerRequestInternal {
+    private static class MappedHttpServerRequest extends HttpServerRequestInternal {
         private final Vertx vertx;
         private final Buffer requestPayload;
         private final HttpMethod method;
@@ -46,6 +49,7 @@ public class EventBusAdapter {
         private String path;
         private String query;
         private MultiMap params;
+        private Charset paramsCharset = StandardCharsets.UTF_8;
         private Handler<Buffer> dataHandler;
         private Handler<Void> endHandler;
         private HttpServerResponse response;
@@ -116,6 +120,11 @@ public class EventBusAdapter {
                 query = UrlParser.query(uri);
             }
             return query;
+        }
+
+        @Override
+        public HostAndPort authority() {
+            return null;
         }
 
         @Override
@@ -279,6 +288,16 @@ public class EventBusAdapter {
                     }
 
                     @Override
+                    public Future<Void> writeEarlyHints(MultiMap headers) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public void writeEarlyHints(MultiMap headers, Handler<AsyncResult<Void>> handler) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
                     public Future<Void> end(String chunk) {
                         write(Buffer.buffer(chunk));
                         return end();
@@ -417,6 +436,11 @@ public class EventBusAdapter {
                     }
 
                     @Override
+                    public Future<HttpServerResponse> push(HttpMethod method, HostAndPort authority, String path, MultiMap headers) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
                     public Future<HttpServerResponse> push(HttpMethod method, String host, String path, MultiMap headers) {
                         throw new UnsupportedOperationException();
                     }
@@ -495,9 +519,25 @@ public class EventBusAdapter {
         }
 
         @Override
+        public HttpServerRequest setParamsCharset(String charset) {
+            Objects.requireNonNull(charset, "Charset must not be null");
+            Charset current = paramsCharset;
+            paramsCharset = Charset.forName(charset);
+            if (!paramsCharset.equals(current)) {
+                params = null;
+            }
+            return this;
+        }
+
+        @Override
+        public String getParamsCharset() {
+            return paramsCharset.name();
+        }
+
+        @Override
         public MultiMap params() {
             if (params == null) {
-                QueryStringDecoder queryStringDecoder = new QueryStringDecoder(uri());
+                QueryStringDecoder queryStringDecoder = new QueryStringDecoder(uri(), paramsCharset);
                 Map<String, List<String>> prms = queryStringDecoder.parameters();
                 params = new HeadersMultiMap();
                 if (!prms.isEmpty()) {

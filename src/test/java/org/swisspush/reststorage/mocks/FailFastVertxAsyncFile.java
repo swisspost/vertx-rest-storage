@@ -5,6 +5,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.file.AsyncFile;
+import io.vertx.core.file.AsyncFileLock;
 
 
 public class FailFastVertxAsyncFile implements AsyncFile {
@@ -160,6 +161,36 @@ public class FailFastVertxAsyncFile implements AsyncFile {
 
     @Override
     public Future<Long> size() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public AsyncFileLock tryLock() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public AsyncFileLock tryLock(long position, long size, boolean shared) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<AsyncFileLock> lock() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void lock(Handler<AsyncResult<AsyncFileLock>> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public Future<AsyncFileLock> lock(long position, long size, boolean shared) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void lock(long position, long size, boolean shared, Handler<AsyncResult<AsyncFileLock>> handler) {
         throw new UnsupportedOperationException(msg);
     }
 }

@@ -65,6 +65,7 @@ public class RestStorageHandlerTest {
         when(request.resume()).thenReturn(request);
         when(request.response()).thenReturn(response);
         when(request.headers()).thenReturn(new HeadersMultiMap());
+        when(response.headers()).thenReturn(new HeadersMultiMap());
     }
 
     @Test

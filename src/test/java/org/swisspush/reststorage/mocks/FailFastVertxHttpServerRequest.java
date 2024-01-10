@@ -8,6 +8,7 @@ import io.vertx.core.MultiMap;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.http.impl.HttpServerRequestInternal;
+import io.vertx.core.net.HostAndPort;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
 
@@ -19,7 +20,7 @@ import java.util.Set;
 /**
  * Simple base class for mocking.
  */
-public class FailFastVertxHttpServerRequest implements HttpServerRequestInternal {
+public class FailFastVertxHttpServerRequest extends HttpServerRequestInternal {
 
     protected final String msg;
 
@@ -97,6 +98,11 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequestInternal
     }
 
     @Override
+    public HostAndPort authority() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public String host() {
         throw new UnsupportedOperationException(msg);
     }
@@ -123,6 +129,16 @@ public class FailFastVertxHttpServerRequest implements HttpServerRequestInternal
 
     @Override
     public String getHeader(CharSequence headerName) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public HttpServerRequest setParamsCharset(String charset) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public String getParamsCharset() {
         throw new UnsupportedOperationException(msg);
     }
 

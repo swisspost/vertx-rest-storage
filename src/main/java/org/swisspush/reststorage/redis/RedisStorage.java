@@ -524,8 +524,6 @@ public class RedisStorage implements Storage {
 
         @Override
         public ByteArrayReadStream exceptionHandler(Handler<Throwable> handler) {
-            log.warn("Happy time wasting, as this method just ignores your exceptionHandler",
-                    new Exception("Happy stacktrace to have any chance to find out who did call us"));
             return this;
         }
 

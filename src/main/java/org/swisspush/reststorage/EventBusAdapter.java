@@ -697,8 +697,6 @@ public class EventBusAdapter {
 
         @Override
         public HttpServerRequest exceptionHandler(Handler<Throwable> throwableHandler) {
-            log.warn("I wish you happy time wasting, as this method just ignores your exceptionHandler",
-                    new Exception("may this stacktrace help you"));
             return this;
         }
 

@@ -44,6 +44,9 @@ public class ModuleConfiguration {
      */
     @Deprecated(since = "3.0.17")
     private String redisAuth = null;
+    private String redisPublishMetrcisAddress = null;
+    private String redisPublishMetrcisPrefix = "storage";
+    private int redisPublishMetrcisRefreshPeriodSec = 10;
     private int redisReconnectAttempts = 0;
     private int redisReconnectDelaySec = 30;
     private int redisPoolRecycleTimeoutMs = 180_000;
@@ -169,6 +172,21 @@ public class ModuleConfiguration {
     @Deprecated(since = "3.0.17")
     public ModuleConfiguration redisAuth(String redisAuth) {
         this.redisAuth = redisAuth;
+        return this;
+    }
+
+    public ModuleConfiguration redisPublishMetrcisAddress(String redisPublishMetrcisAddress) {
+        this.redisPublishMetrcisAddress = redisPublishMetrcisAddress;
+        return this;
+    }
+
+    public ModuleConfiguration redisPublishMetrcisPrefix(String redisPublishMetrcisPrefix) {
+        this.redisPublishMetrcisPrefix = redisPublishMetrcisPrefix;
+        return this;
+    }
+
+    public ModuleConfiguration redisPublishMetrcisRefreshPeriodSec(int redisPublishMetrcisRefreshPeriodSec) {
+        this.redisPublishMetrcisRefreshPeriodSec = redisPublishMetrcisRefreshPeriodSec;
         return this;
     }
 
@@ -339,6 +357,22 @@ public class ModuleConfiguration {
 
     public String getRedisAuth() {
         return redisAuth;
+    }
+
+    public String getRedisPublishMetrcisAddress() {
+        return redisPublishMetrcisAddress;
+    }
+
+    public String getRedisPublishMetrcisPrefix() {
+        return redisPublishMetrcisPrefix;
+    }
+
+    public int getRedisPublishMetrcisRefreshPeriodSec() {
+        if (redisPublishMetrcisRefreshPeriodSec < 1) {
+            log.debug("Ignoring value {}s for redisPublishMetrcisRefreshPersiodSec (too small) and use 1 instead", redisPublishMetrcisRefreshPeriodSec);
+            return 1;
+        }
+        return redisPublishMetrcisRefreshPeriodSec;
     }
 
     public String getRedisPassword() {

@@ -44,6 +44,9 @@ public class ModuleConfigurationTest {
         testContext.assertNull(config.getRedisAuth());
         testContext.assertNull(config.getRedisUser());
         testContext.assertNull(config.getRedisPassword());
+        testContext.assertNull(config.getRedisPublishMetrcisAddress());
+        testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "storage");
+        testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 10);
         testContext.assertEquals(config.getExpirablePrefix(), "rest-storage:expirable");
         testContext.assertEquals(config.getResourcesPrefix(), "rest-storage:resources");
         testContext.assertEquals(config.getCollectionsPrefix(), "rest-storage:collections");
@@ -79,6 +82,9 @@ public class ModuleConfigurationTest {
                 .freeMemoryCheckIntervalMs(10000)
                 .resourceCleanupIntervalSec(15)
                 .maxRedisWaitingHandlers(4096)
+                .redisPublishMetrcisAddress("metrics-eb-address")
+                .redisPublishMetrcisPrefix("my-storage")
+                .redisPublishMetrcisRefreshPeriodSec(20)
                 .return200onDeleteNonExisting(true);
 
         // go through JSON encode/decode
@@ -118,6 +124,9 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
         testContext.assertEquals(config.getHttpRequestHandlerUsername(), "foo");
         testContext.assertEquals(config.getHttpRequestHandlerPassword(), "bar");
+        testContext.assertEquals(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
+        testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "my-storage");
+        testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 20);
     }
 
     @Test
@@ -145,6 +154,9 @@ public class ModuleConfigurationTest {
         testContext.assertNull(json.getString("redisAuth"));
         testContext.assertNull(json.getString("redisPassword"));
         testContext.assertNull(json.getString("redisUser"));
+        testContext.assertNull(json.getString("redisPublishMetrcisAddress"));
+        testContext.assertEquals(json.getString("redisPublishMetrcisPrefix"), "storage");
+        testContext.assertEquals(json.getInteger("redisPublishMetrcisRefreshPeriodSec"), 10);
         testContext.assertEquals(json.getString("expirablePrefix"), "rest-storage:expirable");
         testContext.assertEquals(json.getString("resourcesPrefix"), "rest-storage:resources");
         testContext.assertEquals(json.getString("collectionsPrefix"), "rest-storage:collections");
@@ -171,6 +183,9 @@ public class ModuleConfigurationTest {
                     put("myKey", "myValue");
                 }})
                 .maxRedisWaitingHandlers(4096)
+                .redisPublishMetrcisAddress("metrics-eb-address")
+                .redisPublishMetrcisPrefix("my-storage")
+                .redisPublishMetrcisRefreshPeriodSec(20)
                 .httpRequestHandlerEnabled(false)
                 .httpRequestHandlerAuthenticationEnabled(true)
                 .httpRequestHandlerUsername("foo")
@@ -218,6 +233,10 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(json.getBoolean("httpRequestHandlerAuthenticationEnabled"));
         testContext.assertEquals(json.getString("httpRequestHandlerUsername"), "foo");
         testContext.assertEquals(json.getString("httpRequestHandlerPassword"), "bar");
+
+        testContext.assertEquals(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
+        testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "my-storage");
+        testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 20);
     }
 
     @Test
@@ -253,6 +272,9 @@ public class ModuleConfigurationTest {
         testContext.assertFalse(config.isHttpRequestHandlerAuthenticationEnabled());
         testContext.assertNull(config.getHttpRequestHandlerUsername());
         testContext.assertNull(config.getHttpRequestHandlerPassword());
+        testContext.assertNull(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
+        testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "storage");
+        testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 10);
     }
 
     @Test
@@ -287,6 +309,9 @@ public class ModuleConfigurationTest {
         json.put("confirmCollectionDelete", true);
         json.put("rejectStorageWriteOnLowMemory", true);
         json.put("freeMemoryCheckIntervalMs", 30000);
+        json.put("redisPublishMetrcisAddress", "metrics-eb-address");
+        json.put("redisPublishMetrcisPrefix", "my-storage");
+        json.put("redisPublishMetrcisRefreshPeriodSec", 30);
 
         ModuleConfiguration config = fromJsonObject(json);
         testContext.assertEquals(config.getRoot(), "newroot");
@@ -321,6 +346,10 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(config.isConfirmCollectionDelete());
         testContext.assertTrue(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 30000L);
+
+        testContext.assertEquals(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
+        testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "my-storage");
+        testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 30);
     }
 
     @Test
@@ -355,5 +384,33 @@ public class ModuleConfigurationTest {
         json = config.asJsonObject().encodePrettily();
         config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
         testContext.assertNull(config.getResourceCleanupIntervalSec());
+    }
+
+    @Test
+    public void testRedisPublishMetrcisRefreshPeriodSec(TestContext testContext) {
+        ModuleConfiguration config = new ModuleConfiguration()
+                .redisPublishMetrcisRefreshPeriodSec(10);
+
+        String json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertEquals(10, config.getRedisPublishMetrcisRefreshPeriodSec());
+
+        config = new ModuleConfiguration()
+                .redisPublishMetrcisRefreshPeriodSec(20);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertEquals(20, config.getRedisPublishMetrcisRefreshPeriodSec());
+
+        config = new ModuleConfiguration()
+                .redisPublishMetrcisRefreshPeriodSec(0);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertEquals(1, config.getRedisPublishMetrcisRefreshPeriodSec());
+
+        config = new ModuleConfiguration()
+                .redisPublishMetrcisRefreshPeriodSec(-50);
+        json = config.asJsonObject().encodePrettily();
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertEquals(1, config.getRedisPublishMetrcisRefreshPeriodSec());
     }
 }

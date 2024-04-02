@@ -38,7 +38,7 @@ public class ResourcesUtils {
             URL url = Resources.getResource(resourceName);
             return Resources.toString(url, Charsets.UTF_8);
         } catch (Exception e) {
-            log.error("Error loading resource '"+resourceName+"'", e);
+            log.error("Error loading resource '{}'", resourceName, e);
             if(exceptionWhenNotFound){
                 throw new RuntimeException("Error loading required resource '"+resourceName+"'");
             }

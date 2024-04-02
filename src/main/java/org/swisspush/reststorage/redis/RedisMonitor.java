@@ -6,10 +6,9 @@ import io.vertx.core.buffer.Buffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+
+import static java.util.Collections.emptyList;
 
 public class RedisMonitor {
     private final Vertx vertx;
@@ -47,11 +46,11 @@ public class RedisMonitor {
 
     public void start() {
         timer = vertx.setPeriodic(periodMs, timer -> redisProvider.redis().onSuccess(redisAPI -> {
-            redisAPI.info(new ArrayList<>()).onComplete(event -> {
+            redisAPI.info(emptyList()).onComplete(event -> {
                 if (event.succeeded()) {
                     collectMetrics(event.result().toBuffer());
                 } else {
-                    log.warn("Cannot collect INFO from redis");
+                    log.warn("Cannot collect INFO from redis", event.cause());
                 }
             });
 
@@ -60,7 +59,7 @@ public class RedisMonitor {
                     long value = reply.result().toLong();
                     publisher.publishMetric("expirable", value);
                 } else {
-                    log.warn("Cannot collect zcard from redis for key {}", expirableKey);
+                    log.warn("Cannot collect zcard from redis for key {}", expirableKey, reply.cause());
                 }
             });
 

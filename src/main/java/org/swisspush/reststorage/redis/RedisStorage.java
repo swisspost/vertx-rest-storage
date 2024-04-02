@@ -1,5 +1,6 @@
 package org.swisspush.reststorage.redis;
 
+import com.google.common.base.Strings;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -76,6 +77,8 @@ public class RedisStorage implements Storage {
     private final Lock lock;
 
     private final RedisProvider redisProvider;
+
+    private RedisMonitor redisMonitor;
     private final Map<LuaScript, LuaScriptState> luaScripts = new HashMap<>();
     private final DecimalFormat decimalFormat;
 
@@ -132,6 +135,21 @@ public class RedisStorage implements Storage {
         if (resourceCleanupIntervalSec != null) {
             startPeriodicStorageCleanup(resourceCleanupIntervalSec * 1000L);
         }
+
+        registerMetricsGathering(config);
+    }
+
+    private void registerMetricsGathering(ModuleConfiguration configuration){
+        String metricsAddress = configuration.getRedisPublishMetrcisAddress();
+        if(Strings.isNullOrEmpty(metricsAddress)) {
+            return;
+        }
+        String metricsPrefix = configuration.getRedisPublishMetrcisPrefix();
+        int metricRefreshPeriodSec = configuration.getRedisPublishMetrcisRefreshPeriodSec();
+
+        redisMonitor = new RedisMonitor(vertx, redisProvider, metricsAddress, metricsPrefix,
+                configuration.getExpirablePrefix(), metricRefreshPeriodSec);
+        redisMonitor.start();
     }
 
     private void startPeriodicStorageCleanup(long intervalMs) {

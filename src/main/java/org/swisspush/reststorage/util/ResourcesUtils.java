@@ -16,7 +16,7 @@ import java.net.URL;
  */
 public class ResourcesUtils {
 
-    private static Logger log = LoggerFactory.getLogger(ResourcesUtils.class);
+    private static final Logger log = LoggerFactory.getLogger(ResourcesUtils.class);
 
     private ResourcesUtils() {
         // prevent instantiation

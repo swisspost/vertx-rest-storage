@@ -9,7 +9,6 @@ import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.auth.authentication.Credentials;
 import io.vertx.ext.auth.authentication.UsernamePasswordCredentials;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.Objects;

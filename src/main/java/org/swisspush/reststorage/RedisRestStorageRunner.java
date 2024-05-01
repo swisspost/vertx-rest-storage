@@ -4,7 +4,6 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import static org.slf4j.LoggerFactory.getLogger;

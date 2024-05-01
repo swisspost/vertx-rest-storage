@@ -1,7 +1,6 @@
 package org.swisspush.reststorage;
 
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,7 +13,7 @@ import static org.slf4j.LoggerFactory.getLogger;
 public class MimeTypeResolver {
 
     private static final Logger log = getLogger(MimeTypeResolver.class);
-    private Map<String, String> mimeTypes = new HashMap<>();
+    private final Map<String, String> mimeTypes = new HashMap<>();
     
     private final String defaultMimeType;
     

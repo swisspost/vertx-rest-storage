@@ -346,6 +346,6 @@ public class FilesystemStorageTest {
      *      check if such a directory exists or someone has access to it.
      */
     private static String createPseudoFileStorageRoot() {
-        return new File( "target/fileStorage-"+ UUID.randomUUID().toString() ).getAbsolutePath().replaceAll("\\\\","/"); // <-- Fix windows
+        return new File( "target/fileStorage-"+ UUID.randomUUID()).getAbsolutePath().replaceAll("\\\\","/"); // <-- Fix windows
     }
 }

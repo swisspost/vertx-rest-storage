@@ -312,7 +312,7 @@ public class RestStorageHandlerTest {
                 @Override
                 public void put(String path, String etag, boolean merge, long expire, String lockOwner, LockMode lockMode, long lockExpire, boolean storeCompressed, Handler<Resource> handler) {
                     final DocumentResource resource = new DocumentResource();
-                    resource.writeStream = new FailFastVertxWriteStream<Buffer>() {
+                    resource.writeStream = new FailFastVertxWriteStream<>() {
                         @Override
                         public Future<Void> write(Buffer t) {
                             log.debug("Somewhat irrelevant got written to the resource.");

@@ -18,6 +18,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
+import org.swisspush.reststorage.util.HttpRequestHeader;
 
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
@@ -242,6 +243,73 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
 
         given()
                 .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\"] }")
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(404);
+
+        async.complete();
+    }
+
+    @Test
+    public void testWithTooManySubResources(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        // by configuration, only 5 sub resources are allowed
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\"] }")
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(413).body(containsString("Resources provided: 6. Allowed are: 5"));
+
+        // request header overwrites configuration
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\"] }")
+                .header(HttpRequestHeader.MAX_EXPAND_RESOURCES_HEADER.getName(), 2)
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(413).body(containsString("Resources provided: 6. Allowed are: 2"));
+
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\", \"res7\", \"res8\", \"res9\"] }")
+                .header(HttpRequestHeader.MAX_EXPAND_RESOURCES_HEADER.getName(), 8)
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(413).body(containsString("Resources provided: 9. Allowed are: 8"));
+
+        // invalid header value
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\", \"res7\", \"res8\", \"res9\"] }")
+                .header(HttpRequestHeader.MAX_EXPAND_RESOURCES_HEADER.getName(), "Not a number")
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(413).body(containsString("Resources provided: 9. Allowed are: 5"));
+
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\", \"res7\", \"res8\", \"res9\"] }")
+                .header(HttpRequestHeader.MAX_EXPAND_RESOURCES_HEADER.getName(), 999999999999999999L)
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(413).body(containsString("Resources provided: 9. Allowed are: 5"));
+
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\", \"res7\", \"res8\", \"res9\"] }")
+                .header(HttpRequestHeader.MAX_EXPAND_RESOURCES_HEADER.getName(), 25.5)
+                .when()
+                .post(POST_STORAGE_EXP)
+                .then()
+                .assertThat().statusCode(413).body(containsString("Resources provided: 9. Allowed are: 5"));
+
+        // no 413 Payload Too Large response when limit not exceeded
+        given()
+                .body("{ \"subResources\": [\"res1\", \"res2\", \"res3\", \"res4\", \"res5\", \"res6\"] }")
+                .header(HttpRequestHeader.MAX_EXPAND_RESOURCES_HEADER.getName(), 10)
                 .when()
                 .post(POST_STORAGE_EXP)
                 .then()

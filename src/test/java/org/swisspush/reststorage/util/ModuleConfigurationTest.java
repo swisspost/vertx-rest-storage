@@ -60,6 +60,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 60000L);
         testContext.assertFalse(config.isReturn200onDeleteNonExisting());
         testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 2048);
+        testContext.assertEquals(config.getMaxStorageExpandSubresources(), 1000);
     }
 
     @Test
@@ -85,6 +86,7 @@ public class ModuleConfigurationTest {
                 .redisPublishMetrcisAddress("metrics-eb-address")
                 .redisPublishMetrcisPrefix("my-storage")
                 .redisPublishMetrcisRefreshPeriodSec(20)
+                .maxStorageExpandSubresources(500)
                 .return200onDeleteNonExisting(true);
 
         // go through JSON encode/decode
@@ -127,6 +129,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
         testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "my-storage");
         testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 20);
+        testContext.assertEquals(config.getMaxStorageExpandSubresources(), 500);
     }
 
     @Test
@@ -167,6 +170,7 @@ public class ModuleConfigurationTest {
         testContext.assertFalse(json.getBoolean("confirmCollectionDelete"));
         testContext.assertFalse(json.getBoolean("rejectStorageWriteOnLowMemory"));
         testContext.assertEquals(json.getLong("freeMemoryCheckIntervalMs"), 60000L);
+        testContext.assertEquals(json.getInteger("maxStorageExpandSubresources"), 1000);
     }
 
     @Test
@@ -193,6 +197,7 @@ public class ModuleConfigurationTest {
                 .confirmCollectionDelete(true)
                 .rejectStorageWriteOnLowMemory(true)
                 .resourceCleanupIntervalSec(15)
+                .maxStorageExpandSubresources(500)
                 .freeMemoryCheckIntervalMs(5000);
 
         JsonObject json = config.asJsonObject();
@@ -225,6 +230,7 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getLong("freeMemoryCheckIntervalMs"), 5000L);
         testContext.assertEquals(json.getInteger("maxRedisWaitingHandlers"), 4096);
         testContext.assertEquals(json.getInteger("resourceCleanupIntervalSec"), 15);
+        testContext.assertEquals(json.getInteger("maxStorageExpandSubresources"), 500);
 
         testContext.assertNotNull(json.getJsonObject("editorConfig"));
         testContext.assertTrue(json.getJsonObject("editorConfig").containsKey("myKey"));
@@ -275,6 +281,7 @@ public class ModuleConfigurationTest {
         testContext.assertNull(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
         testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "storage");
         testContext.assertEquals(config.getRedisPublishMetrcisRefreshPeriodSec(), 10);
+        testContext.assertEquals(config.getMaxStorageExpandSubresources(), 1000);
     }
 
     @Test
@@ -312,6 +319,7 @@ public class ModuleConfigurationTest {
         json.put("redisPublishMetrcisAddress", "metrics-eb-address");
         json.put("redisPublishMetrcisPrefix", "my-storage");
         json.put("redisPublishMetrcisRefreshPeriodSec", 30);
+        json.put("maxStorageExpandSubresources", 250);
 
         ModuleConfiguration config = fromJsonObject(json);
         testContext.assertEquals(config.getRoot(), "newroot");
@@ -346,6 +354,7 @@ public class ModuleConfigurationTest {
         testContext.assertTrue(config.isConfirmCollectionDelete());
         testContext.assertTrue(config.isRejectStorageWriteOnLowMemory());
         testContext.assertEquals(config.getFreeMemoryCheckIntervalMs(), 30000L);
+        testContext.assertEquals(config.getMaxStorageExpandSubresources(), 250);
 
         testContext.assertEquals(config.getRedisPublishMetrcisAddress(), "metrics-eb-address");
         testContext.assertEquals(config.getRedisPublishMetrcisPrefix(), "my-storage");

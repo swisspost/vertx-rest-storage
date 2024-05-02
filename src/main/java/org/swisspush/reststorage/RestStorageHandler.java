@@ -591,7 +591,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private boolean checkMaxSubResourcesCount(HttpServerRequest request, int subResourcesArraySize) {
         MultiMap headers = request.headers();
 
-        // get max expand value from request header of use the configuration value as fallback
+        // get max expand value from request header or use the configuration value as fallback
         Integer maxStorageExpand = getInteger(headers, MAX_EXPAND_RESOURCES_HEADER, maxStorageExpandSubresources);
         if (maxStorageExpand < subResourcesArraySize) {
             respondWith(request.response(), StatusCode.PAYLOAD_TOO_LARGE,

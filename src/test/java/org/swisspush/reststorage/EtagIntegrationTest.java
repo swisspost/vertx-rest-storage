@@ -26,7 +26,7 @@ public class EtagIntegrationTest extends RedisStorageIntegrationTestCase {
 
         String etag = get("resources/res1").getHeader(ETAG_HEADER);
         context.assertNotNull(etag, "Etag header should be available in response headers");
-        context.assertTrue(etag.length() > 0, "Etag header should not be empty");
+        context.assertFalse(etag.isEmpty(), "Etag header should not be empty");
 
         // get requests with no if-none-match header should result in statuscode 200
         when().get("resources/res1").then().assertThat()

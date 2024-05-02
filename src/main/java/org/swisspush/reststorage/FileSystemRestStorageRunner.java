@@ -3,7 +3,6 @@ package org.swisspush.reststorage;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Vertx;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static org.slf4j.LoggerFactory.getLogger;
 

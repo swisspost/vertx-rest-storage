@@ -16,7 +16,6 @@ import io.vertx.ext.web.handler.BasicAuthHandler;
 import org.slf4j.Logger;
 import org.swisspush.reststorage.util.*;
 
-import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.util.*;
 
@@ -194,7 +193,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
 
                             StringBuilder body = new StringBuilder(1024);
                             String editor = null;
-                            if (editors.size() > 0) {
+                            if (!editors.isEmpty()) {
                                 editor = editors.values().iterator().next();
                             }
                             body.append("<!DOCTYPE html>\n");
@@ -279,12 +278,8 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                                 documentResource.closeHandler.handle(null);
                                 rsp.end();
                             });
-                            documentResource.addErrorHandler(ex -> {
-                                log.error("TODO error handling", new Exception(ex));
-                            });
-                            documentResource.readStream.exceptionHandler((Handler<Throwable>) ex -> {
-                                log.error("TODO error handling", new Exception(ex));
-                            });
+                            documentResource.addErrorHandler(ex -> log.error("TODO error handling", new Exception(ex)));
+                            documentResource.readStream.exceptionHandler(ex -> log.error("TODO error handling", new Exception(ex)));
                             pump.start();
                         }
                     }
@@ -758,7 +753,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     }
 
     private String collectionName(String path) {
-        if (path.equals("/") || path.equals("")) {
+        if (path.equals("/") || path.isEmpty()) {
             return "root";
         } else {
             return path.substring(path.lastIndexOf("/") + 1);

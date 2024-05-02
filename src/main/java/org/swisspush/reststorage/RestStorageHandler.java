@@ -750,6 +750,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         response.setStatusCode(statusCode.getStatusCode());
         response.setStatusMessage(statusCode.getStatusMessage());
         if (responseBody != null) {
+            response.putHeader(CONTENT_TYPE.getName(), "text/plain");
             response.end(responseBody);
         } else {
             response.end();

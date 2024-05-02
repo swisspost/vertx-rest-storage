@@ -67,6 +67,7 @@ public class ModuleConfiguration {
     private int maxRedisConnectionPoolSize = 24;
     private int maxQueueWaiting = 24;
     private int maxRedisWaitingHandlers = 2048;
+    private int maxStorageExpandSubresources = 1000;
 
 
     public ModuleConfiguration root(String root) {
@@ -280,6 +281,11 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration maxStorageExpandSubresources(int maxStorageExpandSubresources) {
+        this.maxStorageExpandSubresources = maxStorageExpandSubresources;
+        return this;
+    }
+
     public String getRoot() {
         return root;
     }
@@ -443,6 +449,10 @@ public class ModuleConfiguration {
 
     public int getMaxRedisWaitingHandlers() {
         return maxRedisWaitingHandlers;
+    }
+
+    public int getMaxStorageExpandSubresources() {
+        return maxStorageExpandSubresources;
     }
 
     public JsonObject asJsonObject() {

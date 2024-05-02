@@ -42,6 +42,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private final boolean rejectStorageWriteOnLowMemory;
     private final boolean return200onDeleteNonExisting;
     private final DecimalFormat decimalFormat;
+    private final Integer maxStorageExpandSubresources;
 
     public RestStorageHandler(Vertx vertx, final Logger log, final Storage storage, final ModuleConfiguration config) {
         this.router = Router.router(vertx);
@@ -51,6 +52,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         this.confirmCollectionDelete = config.isConfirmCollectionDelete();
         this.rejectStorageWriteOnLowMemory = config.isRejectStorageWriteOnLowMemory();
         this.return200onDeleteNonExisting = config.isReturn200onDeleteNonExisting();
+        this.maxStorageExpandSubresources = config.getMaxStorageExpandSubresources();
 
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);
@@ -586,17 +588,35 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                 });
     }
 
+    private boolean checkMaxSubResourcesCount(HttpServerRequest request, int subResourcesArraySize) {
+        MultiMap headers = request.headers();
+
+        // get max expand value from request header or use the configuration value as fallback
+        Integer maxStorageExpand = getInteger(headers, MAX_EXPAND_RESOURCES_HEADER, maxStorageExpandSubresources);
+        if (maxStorageExpand < subResourcesArraySize) {
+            respondWith(request.response(), StatusCode.PAYLOAD_TOO_LARGE,
+                    "Resources provided: "+subResourcesArraySize+". Allowed are: " + maxStorageExpand);
+            return true;
+        }
+        return false;
+    }
+
     private void storageExpand(RoutingContext ctx) {
-        if (!containsParam(ctx.request().params(), STORAGE_EXPAND_PARAMETER)) {
-            respondWithNotAllowed(ctx.request());
+        HttpServerRequest request = ctx.request();
+        if (!containsParam(request.params(), STORAGE_EXPAND_PARAMETER)) {
+            respondWithNotAllowed(request);
         } else {
-            ctx.request().bodyHandler(bodyBuf -> {
+            request.bodyHandler(bodyBuf -> {
                 List<String> subResourceNames = new ArrayList<>();
                 try {
                     JsonObject body = new JsonObject(bodyBuf);
                     JsonArray subResourcesArray = body.getJsonArray("subResources");
                     if (subResourcesArray == null) {
-                        respondWithBadRequest(ctx.request(), "Bad Request: Expected array field 'subResources' with names of resources");
+                        respondWithBadRequest(request, "Bad Request: Expected array field 'subResources' with names of resources");
+                        return;
+                    }
+
+                    if (checkMaxSubResourcesCount(request, subResourcesArray.size())) {
                         return;
                     }
 
@@ -606,12 +626,12 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                     ResourceNameUtil.replaceColonsAndSemiColonsInList(subResourceNames);
                 } catch (RuntimeException ex) {
                     log.warn("KISS handler is not interested in error details. I'll report them here then.", ex);
-                    respondWithBadRequest(ctx.request(), "Bad Request: Unable to parse body of storageExpand POST request");
+                    respondWithBadRequest(request, "Bad Request: Unable to parse body of storageExpand POST request");
                     return;
                 }
 
-                final String path = cleanPath(ctx.request().path().substring(prefixFixed.length()));
-                final String etag = ctx.request().headers().get(IF_NONE_MATCH_HEADER.getName());
+                final String path = cleanPath(request.path().substring(prefixFixed.length()));
+                final String etag = request.headers().get(IF_NONE_MATCH_HEADER.getName());
                 storage.storageExpand(path, etag, subResourceNames, resource -> {
                     var rsp = ctx.response();
 
@@ -649,7 +669,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
 
                     if (resource.exists) {
                         if (log.isTraceEnabled()) {
-                            log.trace("RestStorageHandler resource is a DocumentResource: {}", ctx.request().uri());
+                            log.trace("RestStorageHandler resource is a DocumentResource: {}", request.uri());
                         }
 
                         String mimeType = mimeTypeResolver.resolveMimeType(path);
@@ -669,7 +689,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
 
                     } else {
                         if (log.isTraceEnabled()) {
-                            log.trace("RestStorageHandler Could not find resource: {}", ctx.request().uri());
+                            log.trace("RestStorageHandler Could not find resource: {}", request.uri());
                         }
                         rsp.setStatusCode(StatusCode.NOT_FOUND.getStatusCode());
                         rsp.setStatusMessage(StatusCode.NOT_FOUND.getStatusMessage());
@@ -730,6 +750,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         response.setStatusCode(statusCode.getStatusCode());
         response.setStatusMessage(statusCode.getStatusMessage());
         if (responseBody != null) {
+            response.putHeader(CONTENT_TYPE.getName(), "text/plain");
             response.end(responseBody);
         } else {
             response.end();

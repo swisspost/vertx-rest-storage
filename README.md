@@ -127,12 +127,17 @@ would lead to this result
 To use the StorageExpand feature you have to make a POST request to the desired collection to expand having the url parameter **storageExpand=true**. Also, you wil have
 to send the names of the sub resources in the body of the request. Using the example above, the request would look like this:
 
-**POST /yourStorageURL/collection** with the body:
+**POST /yourStorageURL/collection?storageExpand=true** with the body:
 ```json
 {
     "subResources" : ["resource1", "resource2", "resource3"]
 }
 ```
+The amount of sub resources that can be provided is defined in the configuration by the property _maxStorageExpandSubresources_.
+
+To override this for a single request, add the following request header with an appropriate value:
+> x-max-expand-resources: 1500
+
 
 ### Reject PUT requests on low memory (redis only)
 The redis storage provides a feature to reject PUT requests when the memory gets low. The information about the used memory is provided by the
@@ -201,6 +206,7 @@ The following configuration values are available:
 | storageAddress                          | common | resource-storage         | The eventbus address the mod listens to.                                                                                              |
 | editorConfig                            | common |                          | Additional configuration values for the editor                                                                                        |
 | confirmCollectionDelete                 | common | false                    | When set to _true_, an additional _recursive=true_ url parameter has to be set to delete collections                                  |
+| maxStorageExpandSubresources            | common | 1000                     | The amount of sub resources to expand. When limit exceeded, _413 Payload Too Large_ is returned                                       |
 | redisHost                               | redis  | localhost                | The host where redis is running on                                                                                                    |
 | redisPort                               | redis  | 6379                     | The port where redis is running on                                                                                                    |
 | redisReconnectAttempts                  | redis  | 0                        | The amount of reconnect attempts when connection to redis is lost. Use _-1_ for continuous reconnects or _0_ for no reconnects at all |

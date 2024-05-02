@@ -16,6 +16,7 @@ public enum HttpRequestHeader {
     LOCK_EXPIRE_AFTER_HEADER("x-lock-expire-after"),
     EXPIRE_AFTER_HEADER("x-expire-after"),
     IMPORTANCE_LEVEL_HEADER("x-importance-level"),
+    MAX_EXPAND_RESOURCES_HEADER("x-max-expand-resources"),
     COMPRESS_HEADER("x-stored-compressed"),
     CONTENT_TYPE("Content-Type"),
     CONTENT_LENGTH("Content-Length");

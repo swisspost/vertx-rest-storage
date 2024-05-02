@@ -34,6 +34,7 @@ public abstract class RedisStorageIntegrationTestCase extends ConfigurableTestCa
         ModuleConfiguration modConfig = new ModuleConfiguration()
                 .storageType(ModuleConfiguration.StorageType.redis)
                 .confirmCollectionDelete(true)
+                .maxStorageExpandSubresources(5)
                 .storageAddress("rest-storage");
 
         updateModuleConfiguration(modConfig);

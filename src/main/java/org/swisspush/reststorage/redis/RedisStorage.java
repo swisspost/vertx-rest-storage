@@ -51,6 +51,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
+import static org.swisspush.reststorage.redis.RedisUtils.toPayload;
+
 public class RedisStorage implements Storage {
 
     private final Logger log = LoggerFactory.getLogger(RedisStorage.class);
@@ -815,7 +817,7 @@ public class RedisStorage implements Storage {
                     }
                 }
             }
-            if (allowEmptyReturn && items.size() == 0) {
+            if (allowEmptyReturn && items.isEmpty()) {
                 notFound(handler);
             } else {
                 r.items = new ArrayList<>(items);
@@ -1293,46 +1295,4 @@ public class RedisStorage implements Storage {
     private boolean isEmpty(CharSequence cs) {
         return cs == null || cs.length() == 0;
     }
-
-    /**
-     * from https://github.com/vert-x3/vertx-redis-client/blob/3.9/src/main/java/io/vertx/redis/impl/RedisClientImpl.java#L94
-     *
-     * @param parameters
-     * @return
-     */
-    private static List<String> toPayload(Object... parameters) {
-        List<String> result = new ArrayList<>(parameters.length);
-
-        for (Object param : parameters) {
-            // unwrap
-            if (param instanceof JsonArray) {
-                param = ((JsonArray) param).getList();
-            }
-            // unwrap
-            if (param instanceof JsonObject) {
-                param = ((JsonObject) param).getMap();
-            }
-
-            if (param instanceof Collection) {
-                ((Collection) param).stream().filter(Objects::nonNull).forEach(o -> result.add(o.toString()));
-            } else if (param instanceof Map) {
-                for (Map.Entry<?, ?> pair : ((Map<?, ?>) param).entrySet()) {
-                    result.add(pair.getKey().toString());
-                    result.add(pair.getValue().toString());
-                }
-            } else if (param instanceof Stream) {
-                ((Stream) param).forEach(e -> {
-                    if (e instanceof Object[]) {
-                        Collections.addAll(result, (String[]) e);
-                    } else {
-                        result.add(e.toString());
-                    }
-                });
-            } else if (param != null) {
-                result.add(param.toString());
-            }
-        }
-        return result;
-    }
-
 }

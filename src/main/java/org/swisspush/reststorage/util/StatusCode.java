@@ -13,6 +13,7 @@ public enum StatusCode {
     UNAUTHORIZED(401, "Unauthorized"),
     NOT_FOUND(404, "Not Found"),
     METHOD_NOT_ALLOWED(405, "Method Not Allowed"),
+    PAYLOAD_TOO_LARGE(413, "Payload Too Large"),
     INTERNAL_SERVER_ERROR(500, "Internal Server Error"),
     INSUFFICIENT_STORAGE(507, "Insufficient Storage"),
     CONFLICT(409, "Conflict");

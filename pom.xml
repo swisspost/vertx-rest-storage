@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.swisspush</groupId>
     <artifactId>rest-storage</artifactId>
-    <version>3.1.5-SNAPSHOT</version>
+    <version>3.1.4</version>
     <name>rest-storage</name>
     <description>
         Persistence for REST resources in the filesystem or a redis database

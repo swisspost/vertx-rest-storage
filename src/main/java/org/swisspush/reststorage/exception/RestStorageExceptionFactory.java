@@ -15,7 +15,7 @@ import io.vertx.core.eventbus.ReplyFailure;
  * If dependency-injection gets applied properly, an app can even provide its
  * custom implementation to fine-tune the exact behavior even further.
  */
-public interface ExceptionFactory {
+public interface RestStorageExceptionFactory {
 
     public Exception newException(String message, Throwable cause);
 
@@ -23,17 +23,17 @@ public interface ExceptionFactory {
 
 
     /**
-     * See {@link ThriftyExceptionFactory}.
+     * See {@link RestStorageThriftyExceptionFactory}.
      */
-    public static ExceptionFactory newThriftyExceptionFactory() {
-        return new ThriftyExceptionFactory();
+    public static RestStorageExceptionFactory newRestStorageThriftyExceptionFactory() {
+        return new RestStorageThriftyExceptionFactory();
     }
 
     /**
-     * See {@link WastefulExceptionFactory}.
+     * See {@link RestStorageWastefulExceptionFactory}.
      */
-    public static ExceptionFactory newWastefulExceptionFactory() {
-        return new WastefulExceptionFactory();
+    public static RestStorageExceptionFactory newRestStorageWastefulExceptionFactory() {
+        return new RestStorageWastefulExceptionFactory();
     }
 
 }

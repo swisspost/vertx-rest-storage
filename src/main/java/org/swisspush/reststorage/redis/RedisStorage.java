@@ -23,7 +23,7 @@ import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
-import org.swisspush.reststorage.exception.ExceptionFactory;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.lock.Lock;
 import org.swisspush.reststorage.lock.impl.RedisBasedLock;
 import org.swisspush.reststorage.util.GZIPUtil;
@@ -40,17 +40,14 @@ import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 import static org.swisspush.reststorage.redis.RedisUtils.toPayload;
 
@@ -94,7 +91,7 @@ public class RedisStorage implements Storage {
         Vertx vertx,
         ModuleConfiguration config,
         RedisProvider redisProvider,
-        ExceptionFactory exceptionFactory
+        RestStorageExceptionFactory exceptionFactory
     ) {
         this.expirableSet = config.getExpirablePrefix();
         this.redisResourcesPrefix = config.getResourcesPrefix();

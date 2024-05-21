@@ -8,17 +8,17 @@ import io.vertx.core.eventbus.ReplyFailure;
  * this subclass to {@link io.vertx.core.eventbus.Message#reply(Object)} seems to
  * do the trick.
  */
-public class NoStackReplyException extends io.vertx.core.eventbus.ReplyException {
+public class RestStorageNoStackReplyException extends io.vertx.core.eventbus.ReplyException {
 
-    public NoStackReplyException(ReplyFailure failureType, int failureCode, String message) {
+    public RestStorageNoStackReplyException(ReplyFailure failureType, int failureCode, String message) {
         super(failureType, failureCode, message);
     }
 
-    public NoStackReplyException(ReplyFailure failureType, String message) {
+    public RestStorageNoStackReplyException(ReplyFailure failureType, String message) {
         this(failureType, -1, message);
     }
 
-    public NoStackReplyException(ReplyFailure failureType) {
+    public RestStorageNoStackReplyException(ReplyFailure failureType) {
         this(failureType, -1, null);
     }
 

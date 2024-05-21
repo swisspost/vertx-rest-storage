@@ -9,7 +9,7 @@ import io.vertx.redis.client.Command;
 import io.vertx.redis.client.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.swisspush.reststorage.exception.ExceptionFactory;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.lock.Lock;
 import org.swisspush.reststorage.lock.lua.LockLuaScripts;
@@ -35,11 +35,11 @@ public class RedisBasedLock implements Lock {
 
     private final LuaScriptState releaseLockLuaScriptState;
     private final RedisProvider redisProvider;
-    private final ExceptionFactory exceptionFactory;
+    private final RestStorageExceptionFactory exceptionFactory;
 
     public RedisBasedLock(
         RedisProvider redisProvider,
-        ExceptionFactory exceptionFactory
+        RestStorageExceptionFactory exceptionFactory
     ) {
         this.redisProvider = redisProvider;
         this.exceptionFactory = exceptionFactory;

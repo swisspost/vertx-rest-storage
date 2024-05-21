@@ -27,6 +27,7 @@ import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.newRestStorageWastefulExceptionFactory;
 
 /**
  * Tests for the {@link RedisStorage} class
@@ -45,8 +46,9 @@ public class RedisStorageTest {
         redisAPI = Mockito.mock(RedisAPI.class);
         redisProvider = Mockito.mock(RedisProvider.class);
         when(redisProvider.redis()).thenReturn(Future.succeededFuture(redisAPI));
+        var exceptionFactory = newRestStorageWastefulExceptionFactory();
 
-        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider);
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
     }
 
 

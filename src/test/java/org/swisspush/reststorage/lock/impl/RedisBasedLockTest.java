@@ -15,6 +15,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
@@ -22,6 +23,7 @@ import java.time.Duration;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.awaitility.Awaitility.await;
+import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.newRestStorageWastefulExceptionFactory;
 
 /**
  * Tests for the {@link RedisBasedLock} class
@@ -45,7 +47,7 @@ public class RedisBasedLockTest {
     public static void setupLock(){
         vertx = Vertx.vertx();
         RedisAPI redisAPI = RedisAPI.api(new RedisClient(vertx, new NetClientOptions(), new PoolOptions(), new RedisStandaloneConnectOptions(), TracingPolicy.IGNORE));
-        redisBasedLock = new RedisBasedLock(() -> Future.succeededFuture(redisAPI));
+        redisBasedLock = new RedisBasedLock(() -> Future.succeededFuture(redisAPI), newRestStorageWastefulExceptionFactory());
     }
 
     @Before

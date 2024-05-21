@@ -23,6 +23,7 @@ import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
+import org.swisspush.reststorage.exception.ExceptionFactory;
 import org.swisspush.reststorage.lock.Lock;
 import org.swisspush.reststorage.lock.impl.RedisBasedLock;
 import org.swisspush.reststorage.util.GZIPUtil;
@@ -89,7 +90,12 @@ public class RedisStorage implements Storage {
     private final String ID;
     private final String hostAndPort;
 
-    public RedisStorage(Vertx vertx, ModuleConfiguration config, RedisProvider redisProvider) {
+    public RedisStorage(
+        Vertx vertx,
+        ModuleConfiguration config,
+        RedisProvider redisProvider,
+        ExceptionFactory exceptionFactory
+    ) {
         this.expirableSet = config.getExpirablePrefix();
         this.redisResourcesPrefix = config.getResourcesPrefix();
         this.redisCollectionsPrefix = config.getCollectionsPrefix();
@@ -106,7 +112,7 @@ public class RedisStorage implements Storage {
 
         this.ID = UUID.randomUUID().toString();
         this.hostAndPort = config.getRedisHost() + ":" + config.getPort();
-        this.lock = new RedisBasedLock(redisProvider);
+        this.lock = new RedisBasedLock(redisProvider, exceptionFactory);
 
         // load all the lua scripts
         LuaScriptState luaGetScriptState = new LuaScriptState(LuaScript.GET, false);

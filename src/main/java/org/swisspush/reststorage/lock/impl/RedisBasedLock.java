@@ -9,6 +9,7 @@ import io.vertx.redis.client.Command;
 import io.vertx.redis.client.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.exception.ExceptionFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.lock.Lock;
 import org.swisspush.reststorage.lock.lua.LockLuaScripts;
@@ -34,9 +35,14 @@ public class RedisBasedLock implements Lock {
 
     private final LuaScriptState releaseLockLuaScriptState;
     private final RedisProvider redisProvider;
+    private final ExceptionFactory exceptionFactory;
 
-    public RedisBasedLock(RedisProvider redisProvider) {
+    public RedisBasedLock(
+        RedisProvider redisProvider,
+        ExceptionFactory exceptionFactory
+    ) {
         this.redisProvider = redisProvider;
+        this.exceptionFactory = exceptionFactory;
         this.releaseLockLuaScriptState = new LuaScriptState(LockLuaScripts.LOCK_RELEASE, redisProvider, false);
     }
 
@@ -74,7 +80,7 @@ public class RedisBasedLock implements Lock {
                     promise.complete(false);
                 }
             } else {
-                promise.fail(new Exception("stacktrace", event.cause()));
+                promise.fail(exceptionFactory.newException("redisSetWithOptions() failed", event.cause()));
             }
         });
         return promise.future();

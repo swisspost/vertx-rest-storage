@@ -5,20 +5,31 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.exception.ExceptionFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.redis.RedisStorage;
 import org.swisspush.reststorage.util.ModuleConfiguration;
+
+import static org.swisspush.reststorage.exception.ExceptionFactory.newThriftyExceptionFactory;
 
 public class RestStorageMod extends AbstractVerticle {
 
     private final Logger log = LoggerFactory.getLogger(RestStorageMod.class);
 
     private RedisProvider redisProvider;
+    private final ExceptionFactory exceptionFactory;
 
-    public RestStorageMod() {}
+    public RestStorageMod() {
+        this.exceptionFactory = newThriftyExceptionFactory();
+    }
 
-    public RestStorageMod(RedisProvider redisProvider) {
+    public RestStorageMod(
+        RedisProvider redisProvider,
+        ExceptionFactory exceptionFactory
+    ) {
+        assert exceptionFactory != null;
         this.redisProvider = redisProvider;
+        this.exceptionFactory = exceptionFactory;
     }
 
     @Override
@@ -84,7 +95,7 @@ public class RestStorageMod extends AbstractVerticle {
 
         redisProvider.redis().onComplete(event -> {
             if(event.succeeded()) {
-                initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider));
+                initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
             } else {
                 initPromise.fail(new Exception(event.cause()));
             }

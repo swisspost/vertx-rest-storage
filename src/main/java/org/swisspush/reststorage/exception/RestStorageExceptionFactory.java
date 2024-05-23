@@ -17,7 +17,21 @@ import io.vertx.core.eventbus.ReplyFailure;
  */
 public interface RestStorageExceptionFactory {
 
+    /** Convenience overload for {@link #newException(String, Throwable)}. */
+    public default Exception newException(String msg){ return newException(msg, null); }
+
+    /** Convenience overload for {@link #newException(String, Throwable)}. */
+    public default Exception newException(Throwable cause){ return newException(null, cause); }
+
     public Exception newException(String message, Throwable cause);
+
+    /** Convenience overload for {@link #newRuntimeException(String, Throwable)}. */
+    public default RuntimeException newRuntimeException(String msg){ return newRuntimeException(msg, null); }
+
+    /** Convenience overload for {@link #newRuntimeException(String, Throwable)}. */
+    public default RuntimeException newRuntimeException(Throwable cause){ return newRuntimeException(null, cause); }
+
+    public RuntimeException newRuntimeException(String message, Throwable cause);
 
     public ReplyException newReplyException(ReplyFailure failureType, int failureCode, String message);
 

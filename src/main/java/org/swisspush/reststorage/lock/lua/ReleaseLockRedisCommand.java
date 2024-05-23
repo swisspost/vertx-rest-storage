@@ -2,6 +2,7 @@ package org.swisspush.reststorage.lock.lua;
 
 import io.vertx.core.Promise;
 import org.slf4j.Logger;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 
 import java.util.ArrayList;
@@ -17,14 +18,23 @@ public class ReleaseLockRedisCommand implements RedisCommand {
     private final List<String> arguments;
     private final Promise<Boolean> promise;
     private final RedisProvider redisProvider;
+    private final RestStorageExceptionFactory exceptionFactory;
     private final Logger log;
 
-    public ReleaseLockRedisCommand(LuaScriptState luaScriptState, List<String> keys, List<String> arguments,
-                                   RedisProvider redisProvider, Logger log, final Promise<Boolean> promise) {
+    public ReleaseLockRedisCommand(
+        LuaScriptState luaScriptState,
+        List<String> keys,
+        List<String> arguments,
+        RedisProvider redisProvider,
+        RestStorageExceptionFactory exceptionFactory,
+        Logger log,
+        final Promise<Boolean> promise
+    ) {
         this.luaScriptState = luaScriptState;
         this.keys = keys;
         this.arguments = arguments;
         this.redisProvider = redisProvider;
+        this.exceptionFactory = exceptionFactory;
         this.log = log;
         this.promise = promise;
     }
@@ -39,7 +49,7 @@ public class ReleaseLockRedisCommand implements RedisCommand {
 
         redisProvider.redis().onComplete( redisEv -> {
             if( redisEv.failed() ){
-                promise.fail(new Exception("redisProvider.redis()", redisEv.cause()));
+                promise.fail(exceptionFactory.newException("redisProvider.redis() failed", redisEv.cause()));
                 return;
             }
             var redisAPI = redisEv.result();
@@ -54,7 +64,7 @@ public class ReleaseLockRedisCommand implements RedisCommand {
                             promise.fail("amount the script got loaded is higher than 10, we abort");
                         } else {
                             luaScriptState.loadLuaScript(new ReleaseLockRedisCommand(luaScriptState, keys,
-                                    arguments, redisProvider, log, promise), executionCounter);
+                                    arguments, redisProvider, exceptionFactory, log, promise), executionCounter);
                         }
                     } else {
                         promise.fail(new Exception("ReleaseLockRedisCommand request failed", ex));

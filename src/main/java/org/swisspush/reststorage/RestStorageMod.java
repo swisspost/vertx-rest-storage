@@ -41,7 +41,8 @@ public class RestStorageMod extends AbstractVerticle {
             if (event.failed()) {
                 promise.fail(event.cause());
             } else {
-                Handler<HttpServerRequest> handler = new RestStorageHandler(vertx, log, event.result(), modConfig);
+                Handler<HttpServerRequest> handler = new RestStorageHandler(
+                    vertx, log, event.result(), exceptionFactory, modConfig);
 
                 if(modConfig.isHttpRequestHandlerEnabled()) {
                     // in Vert.x 2x 100-continues was activated per default, in vert.x 3x it is off per default.
@@ -49,14 +50,15 @@ public class RestStorageMod extends AbstractVerticle {
 
                     vertx.createHttpServer(options).requestHandler(handler).listen(modConfig.getPort(), result -> {
                         if (result.succeeded()) {
-                            new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
+                            new EventBusAdapter(exceptionFactory).init(vertx, modConfig.getStorageAddress(), handler);
                             promise.complete();
                         } else {
-                            promise.fail(new Exception(result.cause()));
+                            promise.fail(exceptionFactory.newException(
+                                "vertx.HttpServer.listen(" + modConfig.getPort() + ") failed", result.cause()));
                         }
                     });
                 } else {
-                    new EventBusAdapter().init(vertx, modConfig.getStorageAddress(), handler);
+                    new EventBusAdapter(exceptionFactory).init(vertx, modConfig.getStorageAddress(), handler);
                     promise.complete();
                 }
             }
@@ -68,19 +70,19 @@ public class RestStorageMod extends AbstractVerticle {
 
         switch (moduleConfiguration.getStorageType()) {
             case filesystem:
-                promise.complete(new FileSystemStorage(vertx, moduleConfiguration.getRoot()));
+                promise.complete(new FileSystemStorage(vertx, exceptionFactory, moduleConfiguration.getRoot()));
                 break;
             case redis:
                 createRedisStorage(vertx, moduleConfiguration).onComplete(event -> {
                     if(event.succeeded()){
                         promise.complete(event.result());
                     } else {
-                        promise.fail(new Exception(event.cause()));
+                        promise.fail(exceptionFactory.newException("createRedisStorage() failed", event.cause()));
                     }
                 });
                 break;
             default:
-                promise.fail(new RuntimeException("Storage not supported: " + moduleConfiguration.getStorageType()));
+                promise.fail(exceptionFactory.newException("Storage not supported: " + moduleConfiguration.getStorageType()));
         }
 
         return promise.future();
@@ -90,14 +92,14 @@ public class RestStorageMod extends AbstractVerticle {
         Promise<RedisStorage> initPromise = Promise.promise();
 
         if(redisProvider == null) {
-            redisProvider = new DefaultRedisProvider(vertx, moduleConfiguration);
+            redisProvider = new DefaultRedisProvider(vertx, moduleConfiguration, exceptionFactory);
         }
 
         redisProvider.redis().onComplete(event -> {
             if(event.succeeded()) {
                 initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
             } else {
-                initPromise.fail(new Exception(event.cause()));
+                initPromise.fail(exceptionFactory.newException("redisProvider.redis() failed", event.cause()));
             }
         });
 

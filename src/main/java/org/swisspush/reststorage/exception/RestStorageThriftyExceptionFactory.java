@@ -18,8 +18,20 @@ class RestStorageThriftyExceptionFactory implements RestStorageExceptionFactory 
 
     @Override
     public Exception newException(String message, Throwable cause) {
+        // This implementation cares about performance. So if 'cause' is already
+        // of the correct type, we just re-use it directly. There's no need to
+        // produce yet another exception instance.
         if (cause instanceof Exception) return (Exception) cause;
         return new RestStorageNoStacktraceException(message, cause);
+    }
+
+    @Override
+    public RuntimeException newRuntimeException(String msg, Throwable cause) {
+        // This implementation cares about performance. So if 'cause' is already
+        // of the correct type, we just re-use it directly. There's no need to
+        // produce yet another exception instance.
+        if (cause instanceof RuntimeException) return (RuntimeException) cause;
+        return new RestStorageNoStacktraceException(msg, cause);
     }
 
     @Override

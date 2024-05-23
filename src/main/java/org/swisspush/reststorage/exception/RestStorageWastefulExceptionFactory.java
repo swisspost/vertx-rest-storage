@@ -23,6 +23,11 @@ class RestStorageWastefulExceptionFactory implements RestStorageExceptionFactory
     }
 
     @Override
+    public RuntimeException newRuntimeException(String msg, Throwable cause) {
+        return new RuntimeException(msg, cause);
+    }
+
+    @Override
     public ReplyException newReplyException(ReplyFailure failureType, int failureCode, String message) {
         return new ReplyException(failureType, failureCode, message);
     }

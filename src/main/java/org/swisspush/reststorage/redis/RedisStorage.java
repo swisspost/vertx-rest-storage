@@ -77,6 +77,7 @@ public class RedisStorage implements Storage {
     private final Lock lock;
 
     private final RedisProvider redisProvider;
+    private final RestStorageExceptionFactory exceptionFactory;
 
     private RedisMonitor redisMonitor;
     private final Map<LuaScript, LuaScriptState> luaScripts = new HashMap<>();
@@ -104,6 +105,7 @@ public class RedisStorage implements Storage {
 
         this.vertx = vertx;
         this.redisProvider = redisProvider;
+        this.exceptionFactory = exceptionFactory;
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);
 
@@ -207,14 +209,14 @@ public class RedisStorage implements Storage {
         redisProvider.redis().onComplete( ev -> {
             if( ev.failed() ){
                 log.error("Unable to get memory information from redis",
-                        new Exception("A happy stacktrace just for you", ev.cause()));
+                        exceptionFactory.newException("redisProvider.redis() failed", ev.cause()));
                 promise.complete(Optional.empty());
             }
             var redisAPI = ev.result();
             redisAPI.info(Collections.singletonList("memory"), memoryInfo -> {
                 if (memoryInfo.failed()) {
                     log.error("Unable to get memory information from redis",
-                            new Exception("stacktrace", memoryInfo.cause()));
+                            exceptionFactory.newException("redisAPI.info([\"memory\"]) failed", memoryInfo.cause()));
                     promise.complete(Optional.empty());
                     return;
                 }
@@ -389,13 +391,17 @@ public class RedisStorage implements Storage {
         public void loadLuaScript(final RedisCommand redisCommand, int executionCounter) {
             final int executionCounterIncr = ++executionCounter;
 
-            redisProvider.redis().onComplete( ev -> {
-                if( ev.failed() ) throw new RuntimeException("RedisProvider.redis()", ev.cause());
+            redisProvider.redis().onComplete(ev -> {
+                if (ev.failed()) {
+                    throw exceptionFactory.newRuntimeException("RedisProvider.redis()", ev.cause());
+                }
                 var redisAPI = ev.result();
                 // check first if the lua script already exists in the store
                 redisAPI.script(Arrays.asList("exists", sha), existsEv -> {
-                    if( existsEv.failed() )
-                        throw new RuntimeException("Error checking whether lua script exists", existsEv.cause());
+                    if (existsEv.failed()) {
+                        throw exceptionFactory.newRuntimeException(
+                            "redisAPI.script(['exists', '" + sha + "') failed", existsEv.cause());
+                    }
                     Long exists = existsEv.result().get(0).toLong();
                     // if script already
                     if (Long.valueOf(1).equals(exists)) {
@@ -405,8 +411,8 @@ public class RedisStorage implements Storage {
                         log.info("load lua script for script type: {} logoutput: {}", luaScriptType, logoutput);
                         redisAPI.script(Arrays.asList("load", script), loadEv -> {
                             if (loadEv.failed()) {
-                                log.error("Loading of lua script {} failed",
-                                        luaScriptType, new Exception("stacktrace", loadEv.cause()));
+                                log.error("Loading of lua script {} failed", luaScriptType,
+                                    exceptionFactory.newException("redisAPI.script(['load', ...)", loadEv.cause()));
                                 return;
                             }
                             String newSha = loadEv.result().toString();
@@ -606,7 +612,9 @@ public class RedisStorage implements Storage {
         public void exec(final int executionCounter) {
             List<String> args = toPayload(luaScripts.get(LuaScript.GET).getSha(), keys.size(), keys, arguments);
             redisProvider.redis().onComplete( ev -> {
-                if( ev.failed() ) throw new RuntimeException("redisProvider.redis()", ev.cause());
+                if (ev.failed()) {
+                    throw exceptionFactory.newRuntimeException("redisProvider.redis() failed", ev.cause());
+                }
                 var redisAPI = ev.result();
                 redisAPI.evalsha(args, evalShaEv -> {
                     if (evalShaEv.succeeded()) {
@@ -633,7 +641,7 @@ public class RedisStorage implements Storage {
                                 luaScripts.get(LuaScript.GET).loadLuaScript(new Get(keys, arguments, handler), executionCounter);
                             }
                         } else {
-                            log.error("GET request failed", new Exception("Happy stacktrace", ex));
+                            log.error("GET request failed", exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                         }
                     }
                 });
@@ -680,14 +688,17 @@ public class RedisStorage implements Storage {
             List<String> args = toPayload(luaScripts.get(LuaScript.STORAGE_EXPAND).getSha(), keys.size(), keys, arguments);
 
             redisProvider.redis().onComplete( redisEv -> {
-                if( redisEv.failed() ) throw new RuntimeException("redisProvider.redis()", redisEv.cause());
+                if (redisEv.failed()) {
+                    throw exceptionFactory.newRuntimeException("redisProvider.redis() failed", redisEv.cause());
+                }
                 var redisAPI = redisEv.result();
                 redisAPI.evalsha(args, evalShaEv -> {
                     if( evalShaEv.failed() ){
                         Throwable ex = evalShaEv.cause();
                         String message = ex.getMessage();
                         if (message != null && message.startsWith("NOSCRIPT")) {
-                            log.warn("storageExpand script couldn't be found, reload it", new Exception(ex));
+                            log.warn("storageExpand script couldn't be found, reload it",
+                                exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                             log.warn("amount the script got loaded: {}", executionCounter);
                             if (executionCounter > 10) {
                                 log.error("amount the script got loaded is higher than 10, we abort");
@@ -696,7 +707,8 @@ public class RedisStorage implements Storage {
                                         new StorageExpand(keys, arguments, handler, etag), executionCounter);
                             }
                         } else {
-                            log.error("StorageExpand request failed with message", new Exception("stacktrace", ex));
+                            log.error("StorageExpand request failed with message",
+                                exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                         }
                         return;
                     }
@@ -787,8 +799,10 @@ public class RedisStorage implements Storage {
                         };
                         handler.handle(r);
                     } else {
-                        if (log.isInfoEnabled())
-                            log.info("stacktrace just for you", new Exception(decompressedResult.cause()));
+                        if (log.isInfoEnabled()) {
+                            log.info("stacktrace, because handler cannot receive it", exceptionFactory.newException(
+                                "GZIPUtil.decompressResource() failed", decompressedResult.cause()));
+                        }
                         error(handler, "Error during decompression of resource: " + decompressedResult.cause().getMessage());
                     }
                 });
@@ -956,7 +970,8 @@ public class RedisStorage implements Storage {
                         );
                         reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.PUT, new Put(d, keys, arg, handler), 0);
                     } else {
-                        log.info("stacktrace", new Exception("stacktrace", compressResourceResult.cause()));
+                        if (log.isInfoEnabled()) log.info("stacktrace", exceptionFactory.newException(
+                            "GZIPUtil.compressResource(stream.getBytes()) failed", compressResourceResult.cause()));
                         error(handler, "Error during compression of resource: "+ compressResourceResult.cause().getMessage());
                     }
                 });
@@ -1004,8 +1019,10 @@ public class RedisStorage implements Storage {
         public void exec(final int executionCounter) {
             List<String> args = toPayload(luaScripts.get(LuaScript.PUT).getSha(), keys.size(), keys, arguments);
 
-            redisProvider.redis().onComplete( redisEv -> {
-                if( redisEv.failed() ) throw new RuntimeException("redisProvider.redis()", redisEv.cause());
+            redisProvider.redis().onComplete(redisEv -> {
+                if (redisEv.failed()) {
+                    throw exceptionFactory.newRuntimeException("redisProvider.redis() failed", redisEv.cause());
+                }
                 var redisAPI = redisEv.result();
                 redisAPI.evalsha(args, evalShaEv -> {
                     if (evalShaEv.succeeded()) {
@@ -1037,10 +1054,11 @@ public class RedisStorage implements Storage {
                                 luaScripts.get(LuaScript.PUT).loadLuaScript(new Put(d, keys, arguments, handler), executionCounter);
                             }
                         } else if ( d.errorHandler != null ) {
-                            if( log.isDebugEnabled() ) log.debug("PUT request failed", new Exception("stacktrace", ex));
+                            if (log.isDebugEnabled()) log.debug("PUT request failed",
+                                exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                             d.errorHandler.handle(ex);
                         }else{
-                            log.error("PUT request failed", new Exception("stacktrace", ex));
+                            log.error("PUT request failed", exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                         }
                     }
                 });
@@ -1095,8 +1113,9 @@ public class RedisStorage implements Storage {
             List<String> args = toPayload(luaScripts.get(LuaScript.DELETE).getSha(), keys.size(), keys, arguments);
 
             redisProvider.redis().onComplete( ev -> {
-                if( ev.failed() ){
-                    log.error("redisProvider.redis()", new Exception(ev.cause()));
+                if (ev.failed()) {
+                    log.error("redisProvider.redis()", exceptionFactory.newException(
+                        "redisProvider.redis() failed", ev.cause()));
                     return;
                 }
                 RedisAPI redisAPI = ev.result();
@@ -1164,9 +1183,10 @@ public class RedisStorage implements Storage {
         );
         List<String> args = toPayload(luaScripts.get(LuaScript.CLEANUP).getSha(), 0, Collections.emptyList(), arguments);
 
-        redisProvider.redis().onComplete( ev -> {
-            if( ev.failed() ){
-                log.error("Redis: cleanupRecursive failed", new Exception("redisProvider.redis()", ev.cause()));
+        redisProvider.redis().onComplete(ev -> {
+            if (ev.failed()) {
+                log.error("Redis: cleanupRecursive failed", exceptionFactory.newException(
+                    "redisProvider.redis() failed", ev.cause()));
                 return;
             }
             var redisAPI = ev.result();
@@ -1177,7 +1197,7 @@ public class RedisStorage implements Storage {
                         log.warn("the cleanup script is not loaded. Load it and exit. The Cleanup will success the next time", ex);
                         luaScripts.get(LuaScript.CLEANUP).loadLuaScript(new RedisCommandDoNothing(), 0);
                     }else {
-                        if( log.isInfoEnabled() ) log.info("stacktrace", new Exception("stacktrace", ex));
+                        if (log.isInfoEnabled()) log.info("stacktrace", exceptionFactory.newException("redisApi.evalsha() failed", ex));
                         DocumentResource r = new DocumentResource();
                         r.invalid = r.rejected = r.error = true;
                         r.errorMessage = ex.getMessage();

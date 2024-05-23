@@ -67,7 +67,7 @@ public class ReleaseLockRedisCommand implements RedisCommand {
                                     arguments, redisProvider, exceptionFactory, log, promise), executionCounter);
                         }
                     } else {
-                        promise.fail(new Exception("ReleaseLockRedisCommand request failed", ex));
+                        promise.fail(exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                     }
                     return;
                 }

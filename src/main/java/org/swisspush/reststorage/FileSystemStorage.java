@@ -8,6 +8,7 @@ import io.vertx.core.file.FileSystemException;
 import io.vertx.core.file.OpenOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.LockMode;
 
 import java.io.File;
@@ -24,13 +25,15 @@ public class FileSystemStorage implements Storage {
 
     private final String root;
     private final Vertx vertx;
+    private final RestStorageExceptionFactory exceptionFactory;
     private final int rootLen;
     private final FileSystemDirLister fileSystemDirLister;
 
     private final Logger log = LoggerFactory.getLogger(FileSystemStorage.class);
 
-    public FileSystemStorage(Vertx vertx, String root) {
+    public FileSystemStorage(Vertx vertx, RestStorageExceptionFactory exceptionFactory, String root) {
         this.vertx = vertx;
+        this.exceptionFactory = exceptionFactory;
         this.fileSystemDirLister = new FileSystemDirLister(vertx, root);
         // Unify format for simpler work.
         String tmpRoot;
@@ -63,8 +66,9 @@ public class FileSystemStorage implements Storage {
         fileSystem().exists(fullPath, booleanAsyncResult -> {
             if( booleanAsyncResult.failed() ){
                 String msg = "vertx.fileSystem().exists()";
-                if( log.isWarnEnabled() ){
-                    log.warn(msg, new Exception(fullPath, booleanAsyncResult.cause()));
+                if (log.isWarnEnabled()) {
+                    log.warn(msg, exceptionFactory.newException("fileSystem().exists(" + fullPath + ") failed",
+                        booleanAsyncResult.cause()));
                 }
                 Resource r = new Resource();
                 r.error = true;
@@ -83,8 +87,9 @@ public class FileSystemStorage implements Storage {
             fileSystem().props(fullPath, filePropsAsyncResult -> {
                 if( filePropsAsyncResult.failed() ){
                     String msg = "vertx.fileSystem().props()";
-                    if( log.isWarnEnabled() ){
-                        log.warn(msg, new Exception(fullPath, filePropsAsyncResult.cause()));
+                    if (log.isWarnEnabled()) {
+                        log.warn(msg, exceptionFactory.newException("fileSystem().props(" + fullPath + ")",
+                            filePropsAsyncResult.cause()));
                     }
                     Resource r = new Resource();
                     r.error = true;

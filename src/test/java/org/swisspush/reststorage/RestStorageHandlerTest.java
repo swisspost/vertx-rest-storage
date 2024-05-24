@@ -30,6 +30,7 @@ import java.util.Optional;
 
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.*;
+import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.newRestStorageWastefulExceptionFactory;
 
 /**
  * Tests for the {@link RestStorageHandler} class
@@ -76,7 +77,7 @@ public class RestStorageHandlerTest {
                 .httpRequestHandlerAuthenticationEnabled(true)
                 .httpRequestHandlerUsername("foo");
 
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap());
@@ -96,7 +97,7 @@ public class RestStorageHandlerTest {
                 .httpRequestHandlerAuthenticationEnabled(true)
                 .httpRequestHandlerPassword("bar");
 
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap());
@@ -119,7 +120,7 @@ public class RestStorageHandlerTest {
                 .httpRequestHandlerUsername("foo")
                 .httpRequestHandlerPassword("bar");
 
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap());
@@ -140,7 +141,7 @@ public class RestStorageHandlerTest {
                 .httpRequestHandlerUsername("foo")
                 .httpRequestHandlerPassword("bar");
 
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.method()).thenReturn(HttpMethod.GET);
@@ -172,7 +173,7 @@ public class RestStorageHandlerTest {
                 .httpRequestHandlerUsername("foo")
                 .httpRequestHandlerPassword("bar");
 
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.method()).thenReturn(HttpMethod.GET);
@@ -198,7 +199,7 @@ public class RestStorageHandlerTest {
     @Test
     public void testPUTWithInvalidImportanceLevelHeader(TestContext testContext) {
         ModuleConfiguration config = new ModuleConfiguration().prefix("/").rejectStorageWriteOnLowMemory(true);
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "not_a_number"));
@@ -220,7 +221,7 @@ public class RestStorageHandlerTest {
     @Test
     public void testPUTWithEnabledRejectStorageWriteOnLowMemoryButNoHeaders(TestContext testContext) {
         ModuleConfiguration config = new ModuleConfiguration().prefix("/").rejectStorageWriteOnLowMemory(true);
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ACT
         restStorageHandler.handle(request);
@@ -235,7 +236,7 @@ public class RestStorageHandlerTest {
     @Test
     public void testPUTWithDisabledRejectStorageWriteOnLowMemoryButHeaders(TestContext testContext) {
         ModuleConfiguration config = new ModuleConfiguration().prefix("/").rejectStorageWriteOnLowMemory(false);
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
@@ -253,7 +254,7 @@ public class RestStorageHandlerTest {
     @Test
     public void testPUTWithNoMemoryUsageAvailable(TestContext testContext) {
         ModuleConfiguration config = new ModuleConfiguration().prefix("/").rejectStorageWriteOnLowMemory(true);
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
@@ -270,7 +271,7 @@ public class RestStorageHandlerTest {
     @Test
     public void testRejectPUTRequestWhenMemoryUsageHigherThanImportanceLevel(TestContext testContext) {
         ModuleConfiguration config = new ModuleConfiguration().prefix("/").rejectStorageWriteOnLowMemory(true);
-        restStorageHandler = new RestStorageHandler(vertx, log, storage, config);
+        restStorageHandler = new RestStorageHandler(vertx, log, storage, newRestStorageWastefulExceptionFactory(), config);
 
         // ARRANGE
         when(request.headers()).thenReturn(new HeadersMultiMap().add(HttpRequestHeader.IMPORTANCE_LEVEL_HEADER.getName(), "50"));
@@ -335,7 +336,7 @@ public class RestStorageHandlerTest {
                 }
             };
             final ModuleConfiguration config = new ModuleConfiguration();
-            victim = new RestStorageHandler(mockedVertx, log, mockedStorage, config);
+            victim = new RestStorageHandler(mockedVertx, log, mockedStorage, newRestStorageWastefulExceptionFactory(), config);
         }
 
         // Mock request
@@ -553,7 +554,7 @@ public class RestStorageHandlerTest {
         final RestStorageHandler victim;
         {
             final ModuleConfiguration myConfig = new ModuleConfiguration().prefix("/").rejectStorageWriteOnLowMemory(true);
-            victim = new RestStorageHandler(null, log, storage, myConfig);
+            victim = new RestStorageHandler(null, log, storage, newRestStorageWastefulExceptionFactory(), myConfig);
         }
 
         // Trigger our funny request.

@@ -10,6 +10,7 @@ import io.vertx.redis.client.RedisClientType;
 import io.vertx.redis.client.RedisOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
@@ -29,6 +30,7 @@ public class DefaultRedisProvider implements RedisProvider {
     private final Vertx vertx;
 
     private final ModuleConfiguration configuration;
+    private final RestStorageExceptionFactory exceptionFactory;
 
     private RedisAPI redisAPI;
     private Redis redis;
@@ -37,9 +39,14 @@ public class DefaultRedisProvider implements RedisProvider {
 
     private final AtomicReference<Promise<RedisAPI>> connectPromiseRef = new AtomicReference<>();
 
-    public DefaultRedisProvider(Vertx vertx, ModuleConfiguration configuration) {
+    public DefaultRedisProvider(
+        Vertx vertx,
+        ModuleConfiguration configuration,
+        RestStorageExceptionFactory exceptionFactory
+    ) {
         this.vertx = vertx;
         this.configuration = configuration;
+        this.exceptionFactory = exceptionFactory;
     }
 
     @Override
@@ -102,9 +109,9 @@ public class DefaultRedisProvider implements RedisProvider {
             createConnectStrings().forEach(redisOptions::addConnectionString);
             redis = Redis.createClient(vertx, redisOptions);
 
-            redis.connect().onComplete( ev -> {
-                if( ev.failed() ) {
-                    promise.fail(new Exception("redis.connect()", ev.cause()));
+            redis.connect().onComplete(ev -> {
+                if (ev.failed()) {
+                    promise.fail(exceptionFactory.newException("redis.connect() failed", ev.cause()));
                     connecting.set(false);
                     return;
                 }

@@ -8,12 +8,14 @@ import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.spi.ExecutorServiceFactory;
 import io.vertx.core.streams.Pump;
 import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BasicAuthHandler;
 import org.slf4j.Logger;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.*;
 
 import java.text.DecimalFormat;
@@ -29,6 +31,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private final Logger log;
     private final Router router;
     private final Storage storage;
+    private final RestStorageExceptionFactory exceptionFactory;
 
     private final MimeTypeResolver mimeTypeResolver = new MimeTypeResolver("application/json; charset=utf-8");
 
@@ -43,10 +46,17 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private final DecimalFormat decimalFormat;
     private final Integer maxStorageExpandSubresources;
 
-    public RestStorageHandler(Vertx vertx, final Logger log, final Storage storage, final ModuleConfiguration config) {
+    public RestStorageHandler(
+        Vertx vertx,
+        Logger log,
+        Storage storage,
+        RestStorageExceptionFactory exceptionFactory,
+        ModuleConfiguration config
+    ) {
         this.router = Router.router(vertx);
         this.log = log;
         this.storage = storage;
+        this.exceptionFactory = exceptionFactory;
         this.prefix = config.getPrefix();
         this.confirmCollectionDelete = config.isConfirmCollectionDelete();
         this.rejectStorageWriteOnLowMemory = config.isRejectStorageWriteOnLowMemory();
@@ -65,7 +75,8 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         Result<Boolean, String> result = checkHttpAuthenticationConfiguration(config);
         if(result.isErr()) {
             router.route().handler(ctx -> {
-                log.warn("router.route()", new Exception(result.getErr()));
+                log.warn("stacktrace", exceptionFactory.newException(
+                    "router.route() failed: " + result.getErr()));
                 respondWith(ctx.response(), StatusCode.INTERNAL_SERVER_ERROR, result.getErr());
             });
         } else if (result.getOk()) {
@@ -278,8 +289,10 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                                 documentResource.closeHandler.handle(null);
                                 rsp.end();
                             });
-                            documentResource.addErrorHandler(ex -> log.error("TODO error handling", new Exception(ex)));
-                            documentResource.readStream.exceptionHandler(ex -> log.error("TODO error handling", new Exception(ex)));
+                            documentResource.addErrorHandler((Throwable ex) -> log.error("stacktrace",
+                                exceptionFactory.newException("TODO error handling", ex)));
+                            documentResource.readStream.exceptionHandler((Throwable ex) -> log.error("stacktrace",
+                                exceptionFactory.newException("TODO error handling", ex)));
                             pump.start();
                         }
                     }
@@ -487,8 +500,9 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         // Caller is responsible to do any 'error', 'exists', 'rejected' checks on the
         // resource. Therefore we simply go forward and store its content.
         final HttpServerRequest request = ctx.request();
-        resource.addErrorHandler(ex -> {
-            if( log.isDebugEnabled() ) log.debug("Happy stacktrace just for you", new Exception(ex));
+        resource.addErrorHandler((Throwable ex) -> {
+            if (log.isDebugEnabled()) log.debug("stacktrace",
+                exceptionFactory.newException("DocumentResource reports error", ex));
             respondWith(response, StatusCode.INTERNAL_SERVER_ERROR, ex.getMessage());
         });
         // Complete response when resource written.
@@ -504,7 +518,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
             resource.errorMessage = exc.getMessage();
             final Handler<Throwable> resourceErrorHandler = resource.errorHandler;
             if (resourceErrorHandler != null) {
-                resourceErrorHandler.handle(new Exception(exc));
+                resourceErrorHandler.handle(exceptionFactory.newException(exc));
             }
         });
         final Pump pump = Pump.pump(request, resource.writeStream);

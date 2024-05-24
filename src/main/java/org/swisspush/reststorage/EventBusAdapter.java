@@ -14,6 +14,7 @@ import io.vertx.core.net.HostAndPort;
 import io.vertx.core.net.NetSocket;
 import io.vertx.core.net.SocketAddress;
 import org.slf4j.Logger;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
@@ -34,9 +35,18 @@ import static org.slf4j.LoggerFactory.getLogger;
 public class EventBusAdapter {
 
     private static final Logger log = getLogger(EventBusAdapter.class);
+    private final RestStorageExceptionFactory exceptionFactory;
+
+    public EventBusAdapter(
+        RestStorageExceptionFactory exceptionFactory
+    ) {
+        this.exceptionFactory = exceptionFactory;
+    }
 
     public void init(final Vertx vertx, String address, final Handler<HttpServerRequest> requestHandler) {
-        vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> requestHandler.handle(new MappedHttpServerRequest(vertx, message)));
+        vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> {
+            requestHandler.handle(new MappedHttpServerRequest(vertx, message, exceptionFactory));
+        });
     }
 
     private static class MappedHttpServerRequest extends HttpServerRequestInternal {
@@ -46,6 +56,7 @@ public class EventBusAdapter {
         private final String uri;
         private final MultiMap requestHeaders;
         private final Message<Buffer> message;
+        private final RestStorageExceptionFactory exceptionFactory;
         private String path;
         private String query;
         private MultiMap params;
@@ -54,9 +65,14 @@ public class EventBusAdapter {
         private Handler<Void> endHandler;
         private HttpServerResponse response;
 
-        private MappedHttpServerRequest(Vertx vertx, Message<Buffer> message) {
+        private MappedHttpServerRequest(
+            Vertx vertx,
+            Message<Buffer> message,
+            RestStorageExceptionFactory exceptionFactory
+        ) {
             this.vertx = vertx;
             this.message = message;
+            this.exceptionFactory = exceptionFactory;
             Buffer buffer = message.body();
             int headerLength = buffer.getInt(0);
             JsonObject header = new JsonObject(buffer.getString(4, headerLength + 4));
@@ -487,15 +503,15 @@ public class EventBusAdapter {
 
                     @Override
                     public HttpServerResponse drainHandler(Handler<Void> voidHandler) {
-                        log.warn("I wish you a happy timeout as this method ignores drainHandler anyway.",
-                                new Exception("may this stacktrace help you"));
+                        log.warn("stacktrace", exceptionFactory.newException(
+                            "I wish you a happy timeout as this method ignores drainHandler anyway."));
                         return this;
                     }
 
                     @Override
                     public HttpServerResponse exceptionHandler(Handler<Throwable> throwableHandler) {
-                        log.warn("I wish you a happy debugging session as this method ignores exceptionHandler anyway.",
-                                new Exception("may this stacktrace help you"));
+                        log.warn("stacktrace", exceptionFactory.newException(
+                            "I wish you a happy debugging session as this method ignores exceptionHandler anyway."));
                         return this;
                     }
                 };

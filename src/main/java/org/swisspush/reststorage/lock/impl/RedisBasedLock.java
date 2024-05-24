@@ -9,6 +9,7 @@ import io.vertx.redis.client.Command;
 import io.vertx.redis.client.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.lock.Lock;
 import org.swisspush.reststorage.lock.lua.LockLuaScripts;
@@ -34,10 +35,16 @@ public class RedisBasedLock implements Lock {
 
     private final LuaScriptState releaseLockLuaScriptState;
     private final RedisProvider redisProvider;
+    private final RestStorageExceptionFactory exceptionFactory;
 
-    public RedisBasedLock(RedisProvider redisProvider) {
+    public RedisBasedLock(
+        RedisProvider redisProvider,
+        RestStorageExceptionFactory exceptionFactory
+    ) {
         this.redisProvider = redisProvider;
-        this.releaseLockLuaScriptState = new LuaScriptState(LockLuaScripts.LOCK_RELEASE, redisProvider, false);
+        this.exceptionFactory = exceptionFactory;
+        this.releaseLockLuaScriptState = new LuaScriptState(
+            LockLuaScripts.LOCK_RELEASE, redisProvider, exceptionFactory, false);
     }
 
     private void redisSetWithOptions(String key, String value, boolean nx, long px, Handler<AsyncResult<Response>> handler) {
@@ -48,14 +55,16 @@ public class RedisBasedLock implements Lock {
         }
         redisProvider.redis().onComplete( redisEv -> {
             if( redisEv.failed() ){
-                handler.handle(new FailedAsyncResult<>(new Exception("redisProvider.redis()", redisEv.cause())));
+                Throwable ex = exceptionFactory.newException("redisProvider.redis() failed", redisEv.cause());
+                handler.handle(new FailedAsyncResult<>(ex));
                 return;
             }
             var redisAPI = redisEv.result();
             String[] payload = RedisUtils.toPayload(key, value, options).toArray(EMPTY_STRING_ARRAY);
             redisAPI.send(Command.SET, payload).onComplete( ev -> {
                 if( ev.failed() ){
-                    handler.handle(new FailedAsyncResult<>(new Exception("redisAPI.send(SET, ...)", ev.cause())));
+                    Throwable ex = exceptionFactory.newException("redisAPI.send(SET, ...) failed", ev.cause());
+                    handler.handle(new FailedAsyncResult<>(ex));
                 }else{
                     handler.handle(ev);
                 }
@@ -74,7 +83,7 @@ public class RedisBasedLock implements Lock {
                     promise.complete(false);
                 }
             } else {
-                promise.fail(new Exception("stacktrace", event.cause()));
+                promise.fail(exceptionFactory.newException("redisSetWithOptions() failed", event.cause()));
             }
         });
         return promise.future();
@@ -86,7 +95,7 @@ public class RedisBasedLock implements Lock {
         List<String> keys = Collections.singletonList(buildLockKey(lock));
         List<String> arguments = Collections.singletonList(token);
         ReleaseLockRedisCommand cmd = new ReleaseLockRedisCommand(releaseLockLuaScriptState,
-                keys, arguments, redisProvider, log, promise);
+            keys, arguments, redisProvider, exceptionFactory, log, promise);
         cmd.exec(0);
         return promise.future();
     }

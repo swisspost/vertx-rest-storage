@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.Mockito.mock;
+import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.newRestStorageWastefulExceptionFactory;
 
 /**
  * Tests for the {@link FileSystemStorage} class
@@ -38,7 +39,7 @@ public class FilesystemStorageTest {
 
     @Test(expected=UnsupportedOperationException.class)
     public void testGetMemoryUsageNotYetImplemented(TestContext testContext){
-        FileSystemStorage storage = new FileSystemStorage(mock(Vertx.class), "/root");
+        FileSystemStorage storage = new FileSystemStorage(mock(Vertx.class), newRestStorageWastefulExceptionFactory(), "/root");
         storage.getCurrentMemoryUsage();
     }
 
@@ -115,7 +116,7 @@ public class FilesystemStorageTest {
                     return fileSystem;
                 }
             };
-            victim = new FileSystemStorage(mockedVertx, root);
+            victim = new FileSystemStorage(mockedVertx, newRestStorageWastefulExceptionFactory(), root);
         }
 
         // Challenge victim
@@ -225,7 +226,7 @@ public class FilesystemStorageTest {
             // Use pseudo root (could be anything because our test will never access real filesystem).
             final String root = createPseudoFileStorageRoot();
             // Wire up victim instance.
-            victim = new FileSystemStorage(mockedVertx, root);
+            victim = new FileSystemStorage(mockedVertx, newRestStorageWastefulExceptionFactory(), root);
         }
 
         // Challenge victim
@@ -289,7 +290,7 @@ public class FilesystemStorageTest {
                     return realVertx.setTimer(delayMillis, handler);
                 }
             };
-            victim = new FileSystemStorage(mockedVertx, root);
+            victim = new FileSystemStorage(mockedVertx, newRestStorageWastefulExceptionFactory(), root);
         }
 
         // Trigger work

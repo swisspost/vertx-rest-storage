@@ -46,7 +46,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private final boolean return200onDeleteNonExisting;
     private final DecimalFormat decimalFormat;
     private final Integer maxStorageExpandSubresources;
-    private final long resourceCleanupAmount;
+    private final long configuredCleanupAmount;
 
     public RestStorageHandler(
         Vertx vertx,
@@ -64,7 +64,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         this.rejectStorageWriteOnLowMemory = config.isRejectStorageWriteOnLowMemory();
         this.return200onDeleteNonExisting = config.isReturn200onDeleteNonExisting();
         this.maxStorageExpandSubresources = config.getMaxStorageExpandSubresources();
-        this.resourceCleanupAmount = config.getResourceCleanupAmount();
+        this.configuredCleanupAmount = config.getResourceCleanupAmount();
 
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);
@@ -134,11 +134,11 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     }
 
     private String getCleanupResourcesAmountContextOrConfig(RoutingContext ctx) {
-        String cleanupResourcesAmount = ctx.request().getParam("cleanupResourcesAmount");
-        if (StringUtils.isEmpty(cleanupResourcesAmount)) {
-            cleanupResourcesAmount = String.valueOf(this.resourceCleanupAmount);
+        String routingContextCleanupAmount = ctx.request().getParam("cleanupResourcesAmount");
+        if (StringUtils.isNotEmpty(routingContextCleanupAmount)) {
+            return routingContextCleanupAmount;
         }
-        return cleanupResourcesAmount;
+        return String.valueOf(this.configuredCleanupAmount);
     }
 
     private void getResourceNotFound(RoutingContext ctx) {

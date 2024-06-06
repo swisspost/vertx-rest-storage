@@ -14,6 +14,7 @@ import io.vertx.ext.auth.authentication.AuthenticationProvider;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BasicAuthHandler;
+import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.*;
@@ -45,6 +46,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
     private final boolean return200onDeleteNonExisting;
     private final DecimalFormat decimalFormat;
     private final Integer maxStorageExpandSubresources;
+    private final long configuredCleanupAmount;
 
     public RestStorageHandler(
         Vertx vertx,
@@ -62,6 +64,7 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         this.rejectStorageWriteOnLowMemory = config.isRejectStorageWriteOnLowMemory();
         this.return200onDeleteNonExisting = config.isReturn200onDeleteNonExisting();
         this.maxStorageExpandSubresources = config.getMaxStorageExpandSubresources();
+        this.configuredCleanupAmount = config.getResourceCleanupAmount();
 
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);
@@ -127,7 +130,15 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                 ctx.response().end();
             });
             pump.start();
-        }, ctx.request().params().get("cleanupResourcesAmount"));
+        }, getCleanupResourcesAmountContextOrConfig(ctx));
+    }
+
+    private String getCleanupResourcesAmountContextOrConfig(RoutingContext ctx) {
+        String routingContextCleanupAmount = ctx.request().getParam("cleanupResourcesAmount");
+        if (StringUtils.isNotEmpty(routingContextCleanupAmount)) {
+            return routingContextCleanupAmount;
+        }
+        return String.valueOf(this.configuredCleanupAmount);
     }
 
     private void getResourceNotFound(RoutingContext ctx) {

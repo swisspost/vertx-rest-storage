@@ -1,9 +1,6 @@
 package org.swisspush.reststorage.redis;
 
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.buffer.impl.BufferImpl;
 import io.vertx.ext.unit.Async;
@@ -18,15 +15,18 @@ import io.vertx.redis.client.impl.types.SimpleStringType;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
+import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.Collections;
+import java.util.List;
 
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.newRestStorageWastefulExceptionFactory;
 
 /**
@@ -40,17 +40,74 @@ public class RedisStorageTest {
     private RedisAPI redisAPI;
     private RedisProvider redisProvider;
     private RedisStorage storage;
+    private RestStorageExceptionFactory exceptionFactory;
 
     @Before
     public void setUp(TestContext context) {
         redisAPI = Mockito.mock(RedisAPI.class);
         redisProvider = Mockito.mock(RedisProvider.class);
         when(redisProvider.redis()).thenReturn(Future.succeededFuture(redisAPI));
-        var exceptionFactory = newRestStorageWastefulExceptionFactory();
+        exceptionFactory = Mockito.spy(newRestStorageWastefulExceptionFactory());
 
         storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
     }
 
+    @Test
+    public void testStorageGetWithRedisErrorCallsHandler(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisProvider.redis()).thenReturn(Future.failedFuture("Booooom"));
+
+        storage.get("/some/path/resource", "", 0, 100, event -> {
+            String msg = "redisProvider.redis() failed";
+            testContext.assertTrue(event.error);
+            testContext.assertEquals(msg, event.errorMessage);
+
+            ArgumentCaptor<Throwable> throwableArgument = ArgumentCaptor.forClass(Throwable.class);
+
+            verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
+            testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageDeleteWithRedisErrorCallsHandler(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisProvider.redis()).thenReturn(Future.failedFuture("Booooom"));
+
+        storage.delete("/some/path/resource", "", LockMode.SILENT, 300L, true, true, event -> {
+            String msg = "redisProvider.redis() failed";
+            testContext.assertTrue(event.error);
+            testContext.assertEquals(msg, event.errorMessage);
+
+            ArgumentCaptor<Throwable> throwableArgument = ArgumentCaptor.forClass(Throwable.class);
+
+            verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
+            testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageExpandWithRedisErrorCallsHandler(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisProvider.redis()).thenReturn(Future.failedFuture("Booooom"));
+
+        storage.storageExpand("/some/path/resource", "", List.of("res1", "res2", "res3"), event -> {
+            String msg = "redisProvider.redis() failed";
+            testContext.assertTrue(event.error);
+            testContext.assertEquals(msg, event.errorMessage);
+
+            ArgumentCaptor<Throwable> throwableArgument = ArgumentCaptor.forClass(Throwable.class);
+
+            verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
+            testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
 
     @Test
     public void testCalculateCurrentMemoryUsageRedisClientFail(TestContext testContext) {

@@ -88,6 +88,8 @@ public class RedisStorage implements Storage {
     private final String ID;
     private final String hostAndPort;
 
+    private static final String redisProviderFailMsg = "redisProvider.redis() failed";
+
     public RedisStorage(
         Vertx vertx,
         ModuleConfiguration config,
@@ -613,7 +615,10 @@ public class RedisStorage implements Storage {
             List<String> args = toPayload(luaScripts.get(LuaScript.GET).getSha(), keys.size(), keys, arguments);
             redisProvider.redis().onComplete( ev -> {
                 if (ev.failed()) {
-                    throw exceptionFactory.newRuntimeException("redisProvider.redis() failed", ev.cause());
+                    log.error("GET request failed with message",
+                            exceptionFactory.newException(redisProviderFailMsg, ev.cause()));
+                    error(handler, redisProviderFailMsg);
+                    return;
                 }
                 var redisAPI = ev.result();
                 redisAPI.evalsha(args, evalShaEv -> {
@@ -689,7 +694,10 @@ public class RedisStorage implements Storage {
 
             redisProvider.redis().onComplete( redisEv -> {
                 if (redisEv.failed()) {
-                    throw exceptionFactory.newRuntimeException("redisProvider.redis() failed", redisEv.cause());
+                    log.error("StorageExpand request failed with message",
+                            exceptionFactory.newException(redisProviderFailMsg, redisEv.cause()));
+                    error(handler, redisProviderFailMsg);
+                    return;
                 }
                 var redisAPI = redisEv.result();
                 redisAPI.evalsha(args, evalShaEv -> {
@@ -1021,7 +1029,10 @@ public class RedisStorage implements Storage {
 
             redisProvider.redis().onComplete(redisEv -> {
                 if (redisEv.failed()) {
-                    throw exceptionFactory.newRuntimeException("redisProvider.redis() failed", redisEv.cause());
+                    log.error("PUT request failed with message",
+                            exceptionFactory.newException(redisProviderFailMsg, redisEv.cause()));
+                    error(handler, redisProviderFailMsg);
+                    return;
                 }
                 var redisAPI = redisEv.result();
                 redisAPI.evalsha(args, evalShaEv -> {
@@ -1114,8 +1125,9 @@ public class RedisStorage implements Storage {
 
             redisProvider.redis().onComplete( ev -> {
                 if (ev.failed()) {
-                    log.error("redisProvider.redis()", exceptionFactory.newException(
-                        "redisProvider.redis() failed", ev.cause()));
+                    log.error("DELETE request failed with message",
+                            exceptionFactory.newException(redisProviderFailMsg, ev.cause()));
+                    error(handler, redisProviderFailMsg);
                     return;
                 }
                 RedisAPI redisAPI = ev.result();

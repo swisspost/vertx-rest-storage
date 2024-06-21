@@ -20,6 +20,7 @@ public class RedisRestStorageRunner {
                 .storageType(ModuleConfiguration.StorageType.redis)
                 .redisReconnectAttempts(-1)
                 .redisPoolRecycleTimeoutMs(-1)
+                .redisReadyCheckIntervalMs(10000)
                 .resourceCleanupIntervalSec(10);
 
         Vertx.vertx().deployVerticle(new RestStorageMod(),

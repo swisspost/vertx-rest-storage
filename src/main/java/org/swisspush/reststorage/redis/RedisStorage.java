@@ -213,6 +213,7 @@ public class RedisStorage implements Storage {
                 log.error("Unable to get memory information from redis",
                         exceptionFactory.newException("redisProvider.redis() failed", ev.cause()));
                 promise.complete(Optional.empty());
+                return;
             }
             var redisAPI = ev.result();
             redisAPI.info(Collections.singletonList("memory"), memoryInfo -> {

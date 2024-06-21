@@ -6,6 +6,7 @@ import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
+import org.swisspush.reststorage.redis.DefaultRedisProvider;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.redis.RedisStorage;
 import org.swisspush.reststorage.util.ModuleConfiguration;

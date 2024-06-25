@@ -71,7 +71,7 @@ public class DefaultRedisProvider implements RedisProvider {
             }
             return Future.failedFuture("Not yet ready!");
 
-        }, Future::failedFuture);
+        });
     }
 
     private boolean reconnectEnabled() {

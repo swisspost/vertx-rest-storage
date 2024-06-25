@@ -70,7 +70,6 @@ public class DefaultRedisProvider implements RedisProvider {
                 return Future.succeededFuture(redisAPI);
             }
             return Future.failedFuture("Not yet ready!");
-
         });
     }
 

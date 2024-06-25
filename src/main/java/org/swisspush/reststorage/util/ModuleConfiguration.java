@@ -50,6 +50,7 @@ public class ModuleConfiguration {
     private int redisReconnectAttempts = 0;
     private int redisReconnectDelaySec = 30;
     private int redisPoolRecycleTimeoutMs = 180_000;
+    private int redisReadyCheckIntervalMs = -1;
     private String redisPassword = null;
     private String redisUser = null;
     private String expirablePrefix = "rest-storage:expirable";
@@ -167,6 +168,11 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisPoolRecycleTimeoutMs(int redisPoolRecycleTimeoutMs) {
         this.redisPoolRecycleTimeoutMs = redisPoolRecycleTimeoutMs;
+        return this;
+    }
+
+    public ModuleConfiguration redisReadyCheckIntervalMs(int redisReadyCheckIntervalMs) {
+        this.redisReadyCheckIntervalMs = redisReadyCheckIntervalMs;
         return this;
     }
 
@@ -355,6 +361,10 @@ public class ModuleConfiguration {
 
     public int getRedisPoolRecycleTimeoutMs() {
         return redisPoolRecycleTimeoutMs;
+    }
+
+    public int getRedisReadyCheckIntervalMs() {
+        return redisReadyCheckIntervalMs;
     }
 
     public boolean isRedisEnableTls() {

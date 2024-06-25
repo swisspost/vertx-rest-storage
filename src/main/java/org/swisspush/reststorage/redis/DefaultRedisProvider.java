@@ -1,4 +1,4 @@
-package org.swisspush.reststorage;
+package org.swisspush.reststorage.redis;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -11,7 +11,6 @@ import io.vertx.redis.client.RedisOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
-import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.ArrayList;
@@ -36,26 +35,42 @@ public class DefaultRedisProvider implements RedisProvider {
     private Redis redis;
     private final AtomicBoolean connecting = new AtomicBoolean();
     private RedisConnection client;
+    private RedisReadyProvider readyProvider;
 
     private final AtomicReference<Promise<RedisAPI>> connectPromiseRef = new AtomicReference<>();
 
     public DefaultRedisProvider(
-        Vertx vertx,
-        ModuleConfiguration configuration,
-        RestStorageExceptionFactory exceptionFactory
+            Vertx vertx,
+            ModuleConfiguration configuration,
+            RestStorageExceptionFactory exceptionFactory
     ) {
         this.vertx = vertx;
         this.configuration = configuration;
         this.exceptionFactory = exceptionFactory;
+
+        maybeInitRedisReadyProvider();
+    }
+
+    private void maybeInitRedisReadyProvider() {
+        if (configuration.getRedisReadyCheckIntervalMs() > 0) {
+            this.readyProvider = new DefaultRedisReadyProvider(vertx, configuration.getRedisReadyCheckIntervalMs());
+        }
     }
 
     @Override
     public Future<RedisAPI> redis() {
-        if (redisAPI != null) {
-            return Future.succeededFuture(redisAPI);
-        } else {
+        if(redisAPI == null) {
             return setupRedisClient();
         }
+        if(readyProvider == null) {
+            return Future.succeededFuture(redisAPI);
+        }
+        return readyProvider.ready(redisAPI).compose(ready -> {
+            if (ready) {
+                return Future.succeededFuture(redisAPI);
+            }
+            return Future.failedFuture("Not yet ready!");
+        });
     }
 
     private boolean reconnectEnabled() {

@@ -219,9 +219,10 @@ The following configuration values are available:
 | deltaEtagsPrefix                        | redis  | delta:etags              | The prefix for delta etags redis keys                                                                                                 |
 | lockPrefix                              | redis  | rest-storage:locks       | The prefix for lock redis keys                                                                                                        |
 | resourceCleanupAmount                   | redis  | 100000                   | The maximum amount of resources to clean in a single cleanup run                                                                      |
-| resourceCleanupIntervalSec              | redis  |                          | The interval (in seconds) how often to peform the storage cleanup. When set to _null_ no periodic storage cleanup is peformed         |
+| resourceCleanupIntervalSec              | redis  |                          | The interval (in seconds) how often to perform the storage cleanup. When set to _null_ no periodic storage cleanup is performed       |
 | rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
 | freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
+| redisReadyCheckIntervalMs               | redis  | -1                       | The interval in milliseconds to calculate the "ready state" of redis. When value < 1, no "ready state" will be calculated             |
 
 ### Configuration util
 

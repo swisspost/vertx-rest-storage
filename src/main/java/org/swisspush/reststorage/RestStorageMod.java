@@ -1,6 +1,10 @@
 package org.swisspush.reststorage;
-
-import io.vertx.core.*;
+;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
@@ -9,6 +13,7 @@ import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.redis.DefaultRedisProvider;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.redis.RedisStorage;
+import org.swisspush.reststorage.s3.S3FileSystemStorage;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.newRestStorageThriftyExceptionFactory;
@@ -72,6 +77,11 @@ public class RestStorageMod extends AbstractVerticle {
         switch (moduleConfiguration.getStorageType()) {
             case filesystem:
                 promise.complete(new FileSystemStorage(vertx, exceptionFactory, moduleConfiguration.getRoot()));
+                break;
+            case s3:
+                promise.complete(new S3FileSystemStorage(vertx, exceptionFactory, moduleConfiguration.getRoot(),
+                        moduleConfiguration.getAwsS3Region(), moduleConfiguration.getAwsS3BucketName(),
+                        moduleConfiguration.getAwsS3AccessKeyId(), moduleConfiguration.getAwsS3SecretAccessKey()));
                 break;
             case redis:
                 createRedisStorage(vertx, moduleConfiguration).onComplete(event -> {

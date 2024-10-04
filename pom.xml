@@ -69,7 +69,11 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
-
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${awssdk.version}</version>
+        </dependency>
         <!-- TEST dependencies -->
         <dependency>
             <!--
@@ -132,6 +136,11 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.nio.s3</groupId>
+            <artifactId>aws-java-nio-spi-for-s3</artifactId>
+            <version>${nio.spi.s3.version}</version>
         </dependency>
     </dependencies>
     <build>
@@ -404,6 +413,8 @@
     </profiles>
     <properties>
         <vertx.version>4.5.2</vertx.version>
+        <awssdk.version>2.27.17</awssdk.version>
+        <nio.spi.s3.version>2.1.0</nio.spi.s3.version>
         <slf4j.version>2.0.10</slf4j.version>
         <junit.version>4.13.2</junit.version>
         <jackson.version>2.16.0</jackson.version>

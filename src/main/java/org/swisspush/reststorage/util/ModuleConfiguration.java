@@ -21,7 +21,7 @@ public class ModuleConfiguration {
     private static final Logger log = LoggerFactory.getLogger(ModuleConfiguration.class);
 
     public enum StorageType {
-        filesystem, redis
+        filesystem, redis, s3
     }
 
     private String root = ".";
@@ -70,6 +70,10 @@ public class ModuleConfiguration {
     private int maxRedisWaitingHandlers = 2048;
     private int maxStorageExpandSubresources = 1000;
 
+    private String awsS3BucketName = null;
+    private String awsS3Region = null;
+    private String awsS3AccessKeyId = null;
+    private String awsS3SecretAccessKey = null;
 
     public ModuleConfiguration root(String root) {
         this.root = root;
@@ -292,6 +296,26 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration awsS3Region(String awsS3Region) {
+        this.awsS3Region = awsS3Region;
+        return this;
+    }
+
+    public ModuleConfiguration awsS3BucketName(String awsS3BucketName) {
+        this.awsS3BucketName = awsS3BucketName;
+        return this;
+    }
+
+    public ModuleConfiguration awsS3AccessKeyId(String awsS3AccessKeyId) {
+        this.awsS3AccessKeyId = awsS3AccessKeyId;
+        return this;
+    }
+
+    public ModuleConfiguration awsS3SecretAccessKey(String awsS3SecretAccessKey) {
+        this.awsS3SecretAccessKey = awsS3SecretAccessKey;
+        return this;
+    }
+
     public String getRoot() {
         return root;
     }
@@ -463,6 +487,22 @@ public class ModuleConfiguration {
 
     public int getMaxStorageExpandSubresources() {
         return maxStorageExpandSubresources;
+    }
+
+    public String getAwsS3Region() {
+        return awsS3Region;
+    }
+
+    public String getAwsS3BucketName() {
+        return awsS3BucketName;
+    }
+
+    public String getAwsS3AccessKeyId() {
+        return awsS3AccessKeyId;
+    }
+
+    public String getAwsS3SecretAccessKey() {
+        return awsS3SecretAccessKey;
     }
 
     public JsonObject asJsonObject() {

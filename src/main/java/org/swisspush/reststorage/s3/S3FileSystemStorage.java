@@ -100,7 +100,7 @@ public class S3FileSystemStorage implements Storage {
 
     @Override
     public Optional<Float> getCurrentMemoryUsage() {
-        throw new UnsupportedOperationException("Method 'getCurrentMemoryUsage' is not yet implemented for the FileSystemStorage");
+        throw new UnsupportedOperationException("Method 'getCurrentMemoryUsage' not supported in S3FileSystemStorage");
     }
 
     @Override
@@ -314,7 +314,7 @@ public class S3FileSystemStorage implements Storage {
 
     private void deleteRecursive(Path path, boolean recursive) throws IOException {
         if (recursive) {
-            Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+            Files.walkFileTree(path, new SimpleFileVisitor<>() {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     Files.delete(file);
                     return FileVisitResult.CONTINUE;
@@ -350,6 +350,6 @@ public class S3FileSystemStorage implements Storage {
 
     @Override
     public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
-        throw new UnsupportedOperationException("Method 'storageExpand' is not yet implemented for the FileSystemStorage");
+        throw new UnsupportedOperationException("Method 'storageExpand' not supported in S3FileSystemStorage");
     }
 }

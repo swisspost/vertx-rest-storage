@@ -51,8 +51,6 @@ public class FileWriteStream implements WriteStream<Buffer> {
         } catch (IOException e) {
             if (exceptionHandler != null) {
                 exceptionHandler.handle(e);
-            } else {
-                throw new RuntimeException("Error writing to OutputStream", e);
             }
             promise.fail(e);
         }
@@ -83,8 +81,6 @@ public class FileWriteStream implements WriteStream<Buffer> {
         } catch (IOException e) {
             if (exceptionHandler != null) {
                 exceptionHandler.handle(e);
-            } else {
-                throw new RuntimeException("Error closing OutputStream", e);
             }
             promise.fail(e);
         }

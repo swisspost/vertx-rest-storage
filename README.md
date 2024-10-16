@@ -223,6 +223,10 @@ The following configuration values are available:
 | rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
 | freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
 | redisReadyCheckIntervalMs               | redis  | -1                       | The interval in milliseconds to calculate the "ready state" of redis. When value < 1, no "ready state" will be calculated             |
+| awsS3Region                             | aws-s3 |                          | The region of S3 server                                                                                                               |
+| awsS3BucketName                         | aws-s3 |                          | The S3 bucket name                                                                                                                    |
+| awsS3AccessKeyId                        | aws-s3 |                          | The AWS access key Id, signup at https://docs.aws.amazon.com/SetUp/latest/UserGuide/setup-AWSsignup.html                              |
+| awsS3SecretAccessKey                    | aws-s3 |                          | The AWS secret access key                                                                                                             |
 
 ### Configuration util
 
@@ -249,10 +253,13 @@ JsonObject json  = new ModuleConfiguration().asJsonObject();
 ```
 
 ## Storage types
-Currently, there are two storage types supported. File system storage and redis storage.
+Currently, there are thress storage types supported. File system storage, S3 File storage and redis storage.
 
 ### File System Storage
 The data is stored hierarchically on the file system. This is the default storage type when not overridden in the configuration.
+
+### S3 File storage
+The data is stored in a S3 instance.
 
 ### Redis Storage
 The data is stored in a redis database.

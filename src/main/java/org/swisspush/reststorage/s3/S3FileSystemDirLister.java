@@ -8,9 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
 import org.swisspush.reststorage.Resource;
-import software.amazon.nio.spi.s3.S3FileSystem;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,12 +30,11 @@ public class S3FileSystemDirLister {
     private static final Logger log = LoggerFactory.getLogger(S3FileSystemDirLister.class);
     private final Vertx vertx;
     private final String root;
-    private final S3FileSystem fileSystem;
 
-    public S3FileSystemDirLister(Vertx vertx, S3FileSystem fileSystem, String root) {
+
+    public S3FileSystemDirLister(Vertx vertx, String root) {
         this.vertx = vertx;
         this.root = root;
-        this.fileSystem = fileSystem;
     }
 
     public void handleListingRequest(Path path, final int offset, final int count, final Handler<Resource> handler) {
@@ -119,17 +116,4 @@ public class S3FileSystemDirLister {
             log.warn("May we should do something here. I've no idea why old implementation did nothing.");
         }
     }
-
-    private String canonicalizeVirtualPath(String path) {
-        return canonicalizeRealPath(root + path);
-    }
-
-    private static String canonicalizeRealPath(String path) {
-        try {
-            return new File(path).getCanonicalPath();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
 }

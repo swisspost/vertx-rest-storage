@@ -39,7 +39,7 @@ public class FileReadStream<T> implements ReadStream<T>, Closeable {
     private Handler<Throwable> exceptionHandler;
     private final InboundBuffer<Buffer> queue;
 
-    private int readBufferSize = DEFAULT_READ_BUFFER_SIZE;
+    private final int readBufferSize = DEFAULT_READ_BUFFER_SIZE;
     private long writtenBytes = 0;
 
     /**
@@ -159,7 +159,6 @@ public class FileReadStream<T> implements ReadStream<T>, Closeable {
     }
 
     private void doRead(Buffer writeBuff, int offset, ByteBuffer buff, long position, Handler<AsyncResult<Buffer>> handler) {
-
         // ReadableByteChannel doesn't have a completion handler, so we wrap it into
         // an executeBlocking and use the future there
         vertx.executeBlocking(future -> {
@@ -243,6 +242,10 @@ public class FileReadStream<T> implements ReadStream<T>, Closeable {
         }
     }
 
+    public boolean isClosed() {
+        return this.closed;
+    }
+
     private void checkContext() {
         if (!vertx.getOrCreateContext().equals(context)) {
             throw new IllegalStateException("AsyncInputStream must only be used in the context that created it, expected: " + this.context
@@ -257,7 +260,6 @@ public class FileReadStream<T> implements ReadStream<T>, Closeable {
     }
 
     private void doClose(Handler<AsyncResult<Void>> handler) {
-
         try {
             ch.close();
             if (handler != null) {

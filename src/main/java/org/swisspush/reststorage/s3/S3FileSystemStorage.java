@@ -87,7 +87,7 @@ public class S3FileSystemStorage implements Storage {
             throw new RuntimeException(e);
         }
 
-        this.fileSystemDirLister = new S3FileSystemDirLister(vertx, fileSystem, root.toString());
+        this.fileSystemDirLister = new S3FileSystemDirLister(vertx, root.toString());
         // Unify format for simpler work.
         String tmpRoot;
         tmpRoot = root.toString();
@@ -113,19 +113,30 @@ public class S3FileSystemStorage implements Storage {
             DocumentResource d = new DocumentResource();
             try {
                 final InputStream inputStream = Files.newInputStream(fullFilePath);
-                final FileReadStream<io.vertx.core.buffer.Buffer> readStream = new FileReadStream<>(vertx, d.length, path, inputStream);
                 d.length = Files.size(fullFilePath);
                 log.debug("Successfully opened '{}' which is {} bytes in size.", path, d.length);
+
+                final FileReadStream<io.vertx.core.buffer.Buffer> readStream = new FileReadStream<>(vertx, d.length, path, inputStream);
                 d.readStream = readStream;
-                d.closeHandler = v -> {
-                    log.debug("Resource got closed. Close file now '{}'", path);
+
+                final Runnable cleanUp = () -> {
+                    if (!readStream.isClosed()){
                     readStream.close();
+                    }
                     try {
                         inputStream.close();
                     } catch (IOException e) {
                         log.debug("Failed to close input stream", e);
                     }
                 };
+                d.closeHandler = v -> {
+                    log.debug("Resource got closed. Close file now '{}'", path);
+                    cleanUp.run();
+                };
+                d.addErrorHandler(event -> {
+                    log.error("Get resource failed.", exceptionFactory.newException("Close file now '" + path + "'", event));
+                    cleanUp.run();
+                });
             } catch (IOException e) {
                 log.warn("Failed to open '{}' for read", path, e);
                 d.error = true;
@@ -195,22 +206,24 @@ public class S3FileSystemStorage implements Storage {
 
             FileWriteStream fileWriteStream = new FileWriteStream(outputStream);
             d.writeStream = fileWriteStream;
-            d.closeHandler = event -> {
+
+            final Runnable cleanUp = () -> {
+
                 try {
                     outputStream.close();
-                    fileWriteStream.end();
-                    d.endHandler.handle(null);
                 } catch (IOException e) {
                     log.error("Failed to close output stream:", e);
                 }
+                fileWriteStream.end();
+            };
+
+            d.closeHandler = event -> {
+                cleanUp.run();
+                d.endHandler.handle(null);
             };
             d.addErrorHandler(err -> {
                 log.error("Put file failed:", err);
-                try {
-                    outputStream.close();
-                } catch (IOException e) {
-                    log.error("Failed to close output stream:", e);
-                }
+                cleanUp.run();
             });
             handler.handle(d);
         } catch (IOException e) {
@@ -221,14 +234,32 @@ public class S3FileSystemStorage implements Storage {
     @Override
     public void delete(String path, String lockOwner, LockMode lockMode, long lockExpire, boolean confirmCollectionDelete,
                        boolean deleteRecursive, final Handler<Resource> handler) {
-        final Path fullPath = canonicalize(path, false);
+
+        // at this stage I don't know what of this path point to
+        final Path fullFilePath = canonicalize(path, false);
+        final Path fullDirPath = canonicalize(path, true);
+
         Resource resource = new Resource();
         boolean deleteRecursiveInFileSystem = true;
         if (confirmCollectionDelete && !deleteRecursive) {
             deleteRecursiveInFileSystem = false;
         }
         boolean finalDeleteRecursiveInFileSystem = deleteRecursiveInFileSystem;
-        if (Files.exists(fullPath, LinkOption.NOFOLLOW_LINKS)) {
+
+        // try to check as a file
+        boolean exists = Files.exists(fullFilePath, LinkOption.NOFOLLOW_LINKS);
+        Path fullPath = fullFilePath;
+
+        if (!exists) {
+            // not exists, maybe is a directory
+            exists = Files.exists(fullDirPath, LinkOption.NOFOLLOW_LINKS);
+            if (exists) {
+                // so it is a directory
+                fullPath = fullDirPath;
+            }
+        }
+
+        if (exists) {
             try {
                 deleteRecursive(fullPath, finalDeleteRecursiveInFileSystem);
                 deleteEmptyParentDirs(fullPath.getParent());
@@ -246,6 +277,16 @@ public class S3FileSystemStorage implements Storage {
             r.exists = false;
             handler.handle(r);
         }
+    }
+
+    @Override
+    public void cleanup(Handler<DocumentResource> handler, String cleanupResourcesAmount) {
+        // nothing to do here
+    }
+
+    @Override
+    public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
+        throw new UnsupportedOperationException("Method 'storageExpand' not supported in S3FileSystemStorage");
     }
 
     /**
@@ -296,7 +337,7 @@ public class S3FileSystemStorage implements Storage {
             } else {
                 // This case should not happen. At least up to now i've no idea of a valid
                 // scenario for this one.
-                log.error("Unexpected error while deleting empty directories.", cause);
+                log.error("Unexpected error while deleting empty directories.", exceptionFactory.newException(cause));
             }
         }
     }
@@ -338,18 +379,8 @@ public class S3FileSystemStorage implements Storage {
         try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(path)) {
             return !dirStream.iterator().hasNext();
         } catch (IOException e) {
-            log.debug("Error to detects is directory empty or not '{}'.", path, e);
+            log.debug("Error to detects is directory empty or not '{}'.", path, exceptionFactory.newException(e));
             return false;
         }
-    }
-
-    @Override
-    public void cleanup(Handler<DocumentResource> handler, String cleanupResourcesAmount) {
-        // nothing to do here
-    }
-
-    @Override
-    public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
-        throw new UnsupportedOperationException("Method 'storageExpand' not supported in S3FileSystemStorage");
     }
 }

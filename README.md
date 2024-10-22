@@ -7,7 +7,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/swisspost/vertx-rest-storage)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
 [![Maven Central](https://img.shields.io/maven-central/v/org.swisspush/rest-storage.svg)]()
 
-Persistence for REST resources in the filesystem or a redis database. 
+Persistence for REST resources in the filesystem, Aws S3 storage or a redis database. 
 
 Stores resources in a hierarchical way according to their URI. It actually implements a generic CRUD REST service.
 
@@ -225,7 +225,7 @@ The following configuration values are available:
 | redisReadyCheckIntervalMs               | redis  | -1                       | The interval in milliseconds to calculate the "ready state" of redis. When value < 1, no "ready state" will be calculated             |
 | awsS3Region                             | aws-s3 |                          | The region of S3 server                                                                                                               |
 | awsS3BucketName                         | aws-s3 |                          | The S3 bucket name                                                                                                                    |
-| awsS3AccessKeyId                        | aws-s3 |                          | The AWS access key Id, signup at https://docs.aws.amazon.com/SetUp/latest/UserGuide/setup-AWSsignup.html                              |
+| awsS3AccessKeyId                        | aws-s3 |                          | The AWS access key Id                                                                                                                 |
 | awsS3SecretAccessKey                    | aws-s3 |                          | The AWS secret access key                                                                                                             |
 
 ### Configuration util
@@ -253,13 +253,15 @@ JsonObject json  = new ModuleConfiguration().asJsonObject();
 ```
 
 ## Storage types
-Currently, there are thress storage types supported. File system storage, S3 File storage and redis storage.
+Currently, there are three storage types supported. File system storage, S3 File storage and redis storage.
 
 ### File System Storage
 The data is stored hierarchically on the file system. This is the default storage type when not overridden in the configuration.
 
 ### S3 File storage
 The data is stored in a S3 instance.
+Before use, need sign up in AWS service at https://docs.aws.amazon.com/SetUp/latest/UserGuide/setup-AWSsignup.html
+you also need create bucket from S3 web console first
 
 ### Redis Storage
 The data is stored in a redis database.

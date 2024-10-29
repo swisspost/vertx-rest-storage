@@ -244,7 +244,7 @@ ModuleConfiguration config = with()
 JsonObject json = config.asJsonObject();
 ```
 
-Properties not overridden will not be changed. Thus remaining default.
+Properties not overridden will not be changed. Thus remaining default.x-lock-mode
 
 To use default values only, the _ModuleConfiguration_ constructor without parameters can be used:
 
@@ -253,12 +253,12 @@ JsonObject json  = new ModuleConfiguration().asJsonObject();
 ```
 
 ## Storage types
-Currently, there are three storage types supported. File system storage, S3 File storage and redis storage.
+Currently, there are three storage types supported. File system storage, S3 storage and redis storage.
 
 ### File System Storage
 The data is stored hierarchically on the file system. This is the default storage type when not overridden in the configuration.
 
-### S3 File storage
+### S3 storage
 The data is stored in a S3 instance.
 Before use, need sign up in AWS service at https://docs.aws.amazon.com/SetUp/latest/UserGuide/setup-AWSsignup.html
 you also need create bucket from S3 web console first

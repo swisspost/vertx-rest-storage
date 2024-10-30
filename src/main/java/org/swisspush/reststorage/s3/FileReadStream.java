@@ -165,14 +165,15 @@ public class FileReadStream<T> implements ReadStream<T>, Closeable {
             try {
                 Integer bytesRead = ch.read(buff);
                 future.complete(bytesRead);
-            } catch (Exception e) {
-                log.error("", e);
+            } catch (IOException e) {
+                log.error("Failed to read data from buffer.", e);
                 future.fail(e);
             }
 
         }, res -> {
 
             if (res.failed()) {
+                log.error("Failed to read data from buffer.", res.cause());
                 context.runOnContext((v) -> handler.handle(Future.failedFuture(res.cause())));
             } else {
                 // Do the completed check
@@ -232,7 +233,6 @@ public class FileReadStream<T> implements ReadStream<T>, Closeable {
             exceptionHandler.handle(t);
         } else {
             log.error("Unhandled exception", t);
-
         }
     }
 

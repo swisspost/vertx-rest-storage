@@ -17,6 +17,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.DirectoryStream;
@@ -84,7 +85,7 @@ public class S3FileSystemStorage implements Storage {
         try (var pathStream = Files.walk(root)) {
             pathStream.forEach(System.out::println);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
 
         this.fileSystemDirLister = new S3FileSystemDirLister(vertx, root.toString());

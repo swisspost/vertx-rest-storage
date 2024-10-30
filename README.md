@@ -244,7 +244,7 @@ ModuleConfiguration config = with()
 JsonObject json = config.asJsonObject();
 ```
 
-Properties not overridden will not be changed. Thus remaining default.x-lock-mode
+Properties not overridden will not be changed. Thus remaining default.
 
 To use default values only, the _ModuleConfiguration_ constructor without parameters can be used:
 

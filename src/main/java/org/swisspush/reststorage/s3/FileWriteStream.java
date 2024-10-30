@@ -6,11 +6,15 @@ import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.streams.WriteStream;
+import org.slf4j.Logger;
 
 import java.io.OutputStream;
 import java.io.IOException;
 
+import static org.slf4j.LoggerFactory.getLogger;
+
 public class FileWriteStream implements WriteStream<Buffer> {
+    private static final Logger log = getLogger(FileWriteStream.class);
     private final OutputStream outputStream;
     private Handler<Throwable> exceptionHandler;
     private Handler<Void> drainHandler;
@@ -37,6 +41,7 @@ public class FileWriteStream implements WriteStream<Buffer> {
             if (exceptionHandler != null) {
                 exceptionHandler.handle(e);
             }
+            log.error("Error writing to stream", e);
             handler.handle(Future.failedFuture(e));
         }
     }
@@ -52,6 +57,7 @@ public class FileWriteStream implements WriteStream<Buffer> {
             if (exceptionHandler != null) {
                 exceptionHandler.handle(e);
             }
+            log.error("Error writing to stream", e);
             promise.fail(e);
         }
         return promise.future();
@@ -67,6 +73,7 @@ public class FileWriteStream implements WriteStream<Buffer> {
             if (exceptionHandler != null) {
                 exceptionHandler.handle(e);
             }
+            log.error("Error when try to end stream", e);
             handler.handle(Future.failedFuture(e));
         }
     }
@@ -82,6 +89,7 @@ public class FileWriteStream implements WriteStream<Buffer> {
             if (exceptionHandler != null) {
                 exceptionHandler.handle(e);
             }
+            log.error("Error when try to end stream", e);
             promise.fail(e);
         }
         return promise.future();

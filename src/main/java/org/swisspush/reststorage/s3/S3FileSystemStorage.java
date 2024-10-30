@@ -112,6 +112,7 @@ public class S3FileSystemStorage implements Storage {
         if (Files.isRegularFile(fullFilePath, LinkOption.NOFOLLOW_LINKS)) {
             log.debug("Open file '{}' ({})", path, fullFilePath);
             DocumentResource d = new DocumentResource();
+            // DON'T close it with try or finally, async code
             try {
                 final InputStream inputStream = Files.newInputStream(fullFilePath);
                 d.length = Files.size(fullFilePath);
@@ -201,7 +202,7 @@ public class S3FileSystemStorage implements Storage {
 
     private void putFile(final Handler<Resource> handler, final Path fullPath) {
         try {
-            // DON"T close it in finally block, async code
+            // DON'T close it in finally block, async code
             final OutputStream outputStream = Files.newOutputStream(fullPath);
             final DocumentResource d = new DocumentResource();
 

@@ -70,10 +70,15 @@ public class ModuleConfiguration {
     private int maxRedisWaitingHandlers = 2048;
     private int maxStorageExpandSubresources = 1000;
 
-    private String awsS3BucketName = null;
+    private String s3BucketName = null;
     private String awsS3Region = null;
-    private String awsS3AccessKeyId = null;
-    private String awsS3SecretAccessKey = null;
+    private String s3AccessKeyId = null;
+    private String s3SecretAccessKey = null;
+    private boolean s3UseTlsConnection = true;
+    private boolean createBucketIfNotExist = false;
+    private boolean localS3 = false;
+    private String s3Endpoint = null;
+    private int s3Port = 0;
 
     public ModuleConfiguration root(String root) {
         this.root = root;
@@ -301,18 +306,43 @@ public class ModuleConfiguration {
         return this;
     }
 
-    public ModuleConfiguration awsS3BucketName(String awsS3BucketName) {
-        this.awsS3BucketName = awsS3BucketName;
+    public ModuleConfiguration s3BucketName(String awsS3BucketName) {
+        this.s3BucketName = awsS3BucketName;
         return this;
     }
 
-    public ModuleConfiguration awsS3AccessKeyId(String awsS3AccessKeyId) {
-        this.awsS3AccessKeyId = awsS3AccessKeyId;
+    public ModuleConfiguration s3AccessKeyId(String awsS3AccessKeyId) {
+        this.s3AccessKeyId = awsS3AccessKeyId;
         return this;
     }
 
-    public ModuleConfiguration awsS3SecretAccessKey(String awsS3SecretAccessKey) {
-        this.awsS3SecretAccessKey = awsS3SecretAccessKey;
+    public ModuleConfiguration s3SecretAccessKey(String awsS3SecretAccessKey) {
+        this.s3SecretAccessKey = awsS3SecretAccessKey;
+        return this;
+    }
+
+    public ModuleConfiguration s3UseTlsConnection(boolean s3UseTlsConnection) {
+        this.s3UseTlsConnection = s3UseTlsConnection;
+        return this;
+    }
+
+    public ModuleConfiguration s3Endpoint(String s3Endpoint) {
+        this.s3Endpoint = s3Endpoint;
+        return this;
+    }
+
+    public ModuleConfiguration s3Port(int s3Port) {
+        this.s3Port = s3Port;
+        return this;
+    }
+
+    public ModuleConfiguration createBucketIfNotExist(boolean createBucketIfNotExist) {
+        this.createBucketIfNotExist = createBucketIfNotExist;
+        return this;
+    }
+
+    public ModuleConfiguration localS3(boolean localS3) {
+        this.localS3 = localS3;
         return this;
     }
 
@@ -493,16 +523,36 @@ public class ModuleConfiguration {
         return awsS3Region;
     }
 
-    public String getAwsS3BucketName() {
-        return awsS3BucketName;
+    public String getS3BucketName() {
+        return s3BucketName;
     }
 
-    public String getAwsS3AccessKeyId() {
-        return awsS3AccessKeyId;
+    public String getS3AccessKeyId() {
+        return s3AccessKeyId;
     }
 
-    public String getAwsS3SecretAccessKey() {
-        return awsS3SecretAccessKey;
+    public String getS3SecretAccessKey() {
+        return s3SecretAccessKey;
+    }
+
+    public boolean getS3UseTlsConnection() {
+        return s3UseTlsConnection;
+    }
+
+    public String getS3Endpoint() {
+        return s3Endpoint;
+    }
+
+    public int getS3Port() {
+        return s3Port;
+    }
+
+    public boolean getCreateBucketIfNotExist() {
+        return createBucketIfNotExist;
+    }
+
+    public boolean isLocalS3() {
+        return localS3;
     }
 
     public JsonObject asJsonObject() {

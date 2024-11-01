@@ -79,14 +79,11 @@ public class S3FileSystemDirLister {
                 log.trace("Processing entry '{}'", entryName);
                 // Create resource representing currently processed directory entry.
                 final Resource resource;
-                if (Files.isDirectory(entry)) {
+                if (entryName.endsWith(S3_PATH_SEPARATOR)) {
                     resource = new CollectionResource();
                     entryName = entryName.replace(S3_PATH_SEPARATOR, "");
-                } else if (Files.isRegularFile(entry)) {
-                    resource = new DocumentResource();
                 } else {
-                    resource = new Resource();
-                    resource.exists = false;
+                    resource = new DocumentResource();
                 }
                 resource.name = entryName;
                 collection.items.add(resource);

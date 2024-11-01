@@ -223,10 +223,15 @@ The following configuration values are available:
 | rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
 | freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
 | redisReadyCheckIntervalMs               | redis  | -1                       | The interval in milliseconds to calculate the "ready state" of redis. When value < 1, no "ready state" will be calculated             |
-| awsS3Region                             | aws-s3 |                          | The region of S3 server                                                                                                               |
-| awsS3BucketName                         | aws-s3 |                          | The S3 bucket name                                                                                                                    |
-| awsS3AccessKeyId                        | aws-s3 |                          | The AWS access key Id                                                                                                                 |
-| awsS3SecretAccessKey                    | aws-s3 |                          | The AWS secret access key                                                                                                             |
+| awsS3Region                             | s3     |                          | The region of AWS S3 server, with local service such localstack, also need set a valid region                                         |
+| s3BucketName                            | s3     |                          | The S3 bucket name                                                                                                                    |
+| s3AccessKeyId                           | s3     |                          | The s3 access key Id                                                                                                                  |
+| s3SecretAccessKey                       | s3     |                          | The s3 secret access key                                                                                                              |
+| localS3                                 | s3     |                          | is 3rd party S3-like services                                                                                                         |
+| s3Endpoint                              | s3     |                          | 3rd party S3-like services endpoint                                                                                                   |
+| s3Port                                  | s3     |                          | 3rd party S3-like services port                                                                                                       |
+| createBucketIfNotExist                  | s3     |                          | create bucket if bucket not exist, related permission required                                                                        |
+
 
 ### Configuration util
 
@@ -260,8 +265,9 @@ The data is stored hierarchically on the file system. This is the default storag
 
 ### S3 storage
 The data is stored in a S3 instance.
+
+#### AWS S3
 Before use, need sign up in AWS service at https://docs.aws.amazon.com/SetUp/latest/UserGuide/setup-AWSsignup.html
-you also need create bucket from S3 web console first
 
 ### Redis Storage
 The data is stored in a redis database.

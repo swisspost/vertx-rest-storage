@@ -66,40 +66,38 @@ public class S3FileSystemStorage implements Storage {
 
     public S3FileSystemStorage(Vertx vertx, RestStorageExceptionFactory exceptionFactory, String rootPath,
                                String awsS3Region, String s3BucketName, String s3AccessKeyId, String s3SecretAccessKey,
-                               boolean useTlsConnection, boolean isLocalS3, String s3Endpoint, int s3Port, boolean createBucketIfNotExist) {
+                               boolean useTlsConnection, boolean isLocalS3, String localS3Endpoint, int localS3Port, boolean createBucketIfNotExist) {
         this.vertx = vertx;
         this.exceptionFactory = exceptionFactory;
         Objects.requireNonNull(s3BucketName, "BucketName must not be null");
         Objects.requireNonNull(awsS3Region, "Region must not be null");
         System.setProperty("aws.region", awsS3Region);
 
-        if (!s3BucketName.startsWith("s3:") && !s3BucketName.startsWith("s3x:")) {
-            if (isLocalS3) {
-                // AWS SDK required those properties to be set
-                System.setProperty("aws.accessKeyId", "local");
-                System.setProperty("aws.secretAccessKey", "local");
-                // for nom-AWS
-                // s3x://[key:secret@]endpoint[:port]/bucket
-                String credentials = "";
-                if (StringUtils.isNotEmpty(s3AccessKeyId) && StringUtils.isNotEmpty(s3SecretAccessKey)) {
-                    credentials = s3AccessKeyId + ":" + s3SecretAccessKey + "@";
-                }
-                String port = "";
-                if (s3Port > 0) {
-                    port = ":" + s3Port;
-                }
-                s3BucketName = "s3x://" + credentials + s3Endpoint + port + "/" + s3BucketName;
-                if (!useTlsConnection) {
-                    System.setProperty("s3.spi.endpoint-protocol", "http");
-                }
-            } else {
-                // for AWS S3
-                Objects.requireNonNull(s3AccessKeyId, "AccessKeyId must not be null");
-                Objects.requireNonNull(s3SecretAccessKey, "SecretAccessKey must not be null");
-                System.setProperty("aws.accessKeyId", s3AccessKeyId);
-                System.setProperty("aws.secretAccessKey", s3SecretAccessKey);
-                s3BucketName = "s3://" + s3BucketName;
+        if (isLocalS3) {
+            // local S3, AWS SDK requires these two properties to be set
+            System.setProperty("aws.accessKeyId", "local");
+            System.setProperty("aws.secretAccessKey", "local");
+
+            String credentials = "";
+            if (StringUtils.isNotEmpty(s3AccessKeyId) && StringUtils.isNotEmpty(s3SecretAccessKey)) {
+                credentials = s3AccessKeyId + ":" + s3SecretAccessKey + "@";
             }
+            String port = "";
+            if (localS3Port > 0) {
+                port = ":" + localS3Port;
+            }
+            // s3x://[key:secret@]endpoint[:port]/bucket
+            s3BucketName = "s3x://" + credentials + localS3Endpoint + port + "/" + s3BucketName;
+            if (!useTlsConnection) {
+                System.setProperty("s3.spi.endpoint-protocol", "http");
+            }
+        } else {
+            // AWS S3
+            Objects.requireNonNull(s3AccessKeyId, "AccessKeyId must not be null");
+            Objects.requireNonNull(s3SecretAccessKey, "SecretAccessKey must not be null");
+            System.setProperty("aws.accessKeyId", s3AccessKeyId);
+            System.setProperty("aws.secretAccessKey", s3SecretAccessKey);
+            s3BucketName = "s3://" + s3BucketName;
         }
 
         var uri = URI.create(s3BucketName);
@@ -107,11 +105,11 @@ public class S3FileSystemStorage implements Storage {
         if (createBucketIfNotExist) {
             try (var fs = FileSystems.newFileSystem(uri,
                     Map.of("locationConstraint", awsS3Region))) {
-                System.out.println(fs.toString());
+                log.info("Bucket created: " + fs.toString());
             } catch (FileSystemAlreadyExistsException e) {
-                log.info("Bucket already exists: ", e);
+                log.info("Bucket " + s3BucketName + " already exists: ", e);
             } catch (IOException e) {
-                log.error("Failed to create bucket", e);
+                log.error("Failed to create bucket " + s3BucketName, e);
             }
         }
 
@@ -131,7 +129,7 @@ public class S3FileSystemStorage implements Storage {
 
         // Cache string length of root without trailing slashes
         int rootLen;
-        for (rootLen = tmpRoot.length() - 1; tmpRoot.charAt(rootLen) == '/'; --rootLen) ;
+        for (rootLen = tmpRoot.length() - 1; tmpRoot.charAt(rootLen) == '/'; --rootLen);
         this.rootLen = rootLen;
     }
 

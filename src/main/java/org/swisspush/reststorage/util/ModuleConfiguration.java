@@ -75,10 +75,10 @@ public class ModuleConfiguration {
     private String s3AccessKeyId = null;
     private String s3SecretAccessKey = null;
     private boolean s3UseTlsConnection = true;
-    private boolean createBucketIfNotExist = false;
+    private boolean createBucketIfNotPresentYet = false;
     private boolean localS3 = false;
-    private String s3Endpoint = null;
-    private int s3Port = 0;
+    private String localS3Endpoint = null;
+    private int localS3Port = 0;
 
     public ModuleConfiguration root(String root) {
         this.root = root;
@@ -326,18 +326,18 @@ public class ModuleConfiguration {
         return this;
     }
 
-    public ModuleConfiguration s3Endpoint(String s3Endpoint) {
-        this.s3Endpoint = s3Endpoint;
+    public ModuleConfiguration localS3Endpoint(String s3Endpoint) {
+        this.localS3Endpoint = s3Endpoint;
         return this;
     }
 
-    public ModuleConfiguration s3Port(int s3Port) {
-        this.s3Port = s3Port;
+    public ModuleConfiguration localS3Port(int s3Port) {
+        this.localS3Port = s3Port;
         return this;
     }
 
-    public ModuleConfiguration createBucketIfNotExist(boolean createBucketIfNotExist) {
-        this.createBucketIfNotExist = createBucketIfNotExist;
+    public ModuleConfiguration createBucketIfNotPresentYet(boolean createBucketIfNotExist) {
+        this.createBucketIfNotPresentYet = createBucketIfNotExist;
         return this;
     }
 
@@ -539,16 +539,16 @@ public class ModuleConfiguration {
         return s3UseTlsConnection;
     }
 
-    public String getS3Endpoint() {
-        return s3Endpoint;
+    public String getLocalS3Endpoint() {
+        return localS3Endpoint;
     }
 
-    public int getS3Port() {
-        return s3Port;
+    public int getLocalS3Port() {
+        return localS3Port;
     }
 
-    public boolean getCreateBucketIfNotExist() {
-        return createBucketIfNotExist;
+    public boolean getCreateBucketIfNotPresentYet() {
+        return createBucketIfNotPresentYet;
     }
 
     public boolean isLocalS3() {

@@ -227,9 +227,9 @@ The following configuration values are available:
 | s3BucketName                            | s3     |                          | The S3 bucket name                                                                                                                    |
 | s3AccessKeyId                           | s3     |                          | The s3 access key Id                                                                                                                  |
 | s3SecretAccessKey                       | s3     |                          | The s3 secret access key                                                                                                              |
-| localS3                                 | s3     |                          | is 3rd party S3-like services                                                                                                         |
-| s3Endpoint                              | s3     |                          | 3rd party S3-like services endpoint                                                                                                   |
-| s3Port                                  | s3     |                          | 3rd party S3-like services port                                                                                                       |
+| localS3                                 | s3     |                          | Set to true in order to use a local S3 instance instead of AWS                                                                        |
+| localS3Endpoint                         | s3     |                          | The endpoint/host to use in case that localS3 is set to true, e.g. localhost                                                          |
+| localS3Port                             | s3     |                          | The port to use in case that localS3 is set to true, e.g. 4566                                                                        |
 | createBucketIfNotExist                  | s3     |                          | create bucket if bucket not exist, related permission required                                                                        |
 
 
@@ -267,7 +267,11 @@ The data is stored hierarchically on the file system. This is the default storag
 The data is stored in a S3 instance.
 
 #### AWS S3
-Before use, need sign up in AWS service at https://docs.aws.amazon.com/SetUp/latest/UserGuide/setup-AWSsignup.html
+See https://aws.amazon.com/s3 it is also possible to use a local instance using https://docs.localstack.cloud/user-guide/aws/s3/
+
+
+docker run --rm -p 4566:4566 -v ./s3:/var/lib/localstack localstack/localstack:s3-latest
+
 
 ### Redis Storage
 The data is stored in a redis database.

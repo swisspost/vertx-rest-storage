@@ -129,7 +129,7 @@ public class S3FileSystemStorage implements Storage {
 
         // Cache string length of root without trailing slashes
         int rootLen;
-        for (rootLen = tmpRoot.length() - 1; tmpRoot.charAt(rootLen) == '/'; --rootLen);
+        for (rootLen = tmpRoot.length() - 1; tmpRoot.charAt(rootLen) == '/'; --rootLen) ;
         this.rootLen = rootLen;
     }
 
@@ -146,8 +146,8 @@ public class S3FileSystemStorage implements Storage {
         if (Files.isRegularFile(fullFilePath, LinkOption.NOFOLLOW_LINKS)) {
             log.debug("Open file '{}' ({})", path, fullFilePath);
             DocumentResource d = new DocumentResource();
-            // DON'T close it with try or finally, async code
             try {
+                // the stream is closed in the closeHandler / errorHandler, see further down
                 final InputStream inputStream = Files.newInputStream(fullFilePath);
                 d.length = Files.size(fullFilePath);
                 log.debug("Successfully opened '{}' which is {} bytes in size.", path, d.length);
@@ -156,8 +156,8 @@ public class S3FileSystemStorage implements Storage {
                 d.readStream = readStream;
 
                 final Runnable cleanUp = () -> {
-                    if (!readStream.isClosed()){
-                    readStream.close();
+                    if (!readStream.isClosed()) {
+                        readStream.close();
                     }
                     try {
                         inputStream.close();

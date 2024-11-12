@@ -80,8 +80,11 @@ public class RestStorageMod extends AbstractVerticle {
                 break;
             case s3:
                 promise.complete(new S3FileSystemStorage(vertx, exceptionFactory, moduleConfiguration.getRoot(),
-                        moduleConfiguration.getAwsS3Region(), moduleConfiguration.getAwsS3BucketName(),
-                        moduleConfiguration.getAwsS3AccessKeyId(), moduleConfiguration.getAwsS3SecretAccessKey()));
+                        moduleConfiguration.getAwsS3Region(), moduleConfiguration.getS3BucketName(),
+                        moduleConfiguration.getS3AccessKeyId(), moduleConfiguration.getS3SecretAccessKey(),
+                        moduleConfiguration.getS3UseTlsConnection(), moduleConfiguration.isLocalS3(),
+                        moduleConfiguration.getLocalS3Endpoint(), moduleConfiguration.getLocalS3Port(),
+                        moduleConfiguration.getCreateBucketIfNotPresentYet()));
                 break;
             case redis:
                 createRedisStorage(vertx, moduleConfiguration).onComplete(event -> {

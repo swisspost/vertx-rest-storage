@@ -228,7 +228,7 @@ The following configuration values are available:
 | s3AccessKeyId                           | s3     |                          | The s3 access key Id                                                                                                                  |
 | s3SecretAccessKey                       | s3     |                          | The s3 secret access key                                                                                                              |
 | localS3                                 | s3     |                          | Set to true in order to use a local S3 instance instead of AWS                                                                        |
-| localS3Endpoint                         | s3     |                          | The endpoint/host to use in case that localS3 is set to true, e.g. localhost                                                          |
+| localS3Endpoint                         | s3     |                          | The endpoint/host to use in case that localS3 is set to true, e.g. 127.0.0.1 (in my case it had to be an IP)                          |
 | localS3Port                             | s3     |                          | The port to use in case that localS3 is set to true, e.g. 4566                                                                        |
 | createBucketIfNotExist                  | s3     |                          | create bucket if bucket not exist, related permission required                                                                        |
 

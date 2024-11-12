@@ -66,7 +66,7 @@ public class S3FileSystemStorage implements Storage {
 
     public S3FileSystemStorage(Vertx vertx, RestStorageExceptionFactory exceptionFactory, String rootPath,
                                String awsS3Region, String s3BucketName, String s3AccessKeyId, String s3SecretAccessKey,
-                               boolean useTlsConnection, boolean isLocalS3, String localS3Endpoint, int localS3Port, boolean createBucketIfNotExist) {
+                               boolean useTlsConnection, boolean isLocalS3, String localS3Endpoint, int localS3Port, boolean createBucketIfNotPresentYet) {
         this.vertx = vertx;
         this.exceptionFactory = exceptionFactory;
         Objects.requireNonNull(s3BucketName, "BucketName must not be null");
@@ -102,7 +102,7 @@ public class S3FileSystemStorage implements Storage {
 
         var uri = URI.create(s3BucketName);
 
-        if (createBucketIfNotExist) {
+        if (createBucketIfNotPresentYet) {
             try (var fs = FileSystems.newFileSystem(uri,
                     Map.of("locationConstraint", awsS3Region))) {
                 log.info("Bucket created: " + fs.toString());

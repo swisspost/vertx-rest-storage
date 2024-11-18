@@ -7,7 +7,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/swisspost/vertx-rest-storage)](https://github.com/swisspost/vertx-rest-storage/releases/latest)
 [![Maven Central](https://img.shields.io/maven-central/v/org.swisspush/rest-storage.svg)]()
 
-Persistence for REST resources in the filesystem or a redis database. 
+Persistence for REST resources in the filesystem, Aws S3 storage or a redis database. 
 
 Stores resources in a hierarchical way according to their URI. It actually implements a generic CRUD REST service.
 
@@ -223,6 +223,15 @@ The following configuration values are available:
 | rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
 | freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
 | redisReadyCheckIntervalMs               | redis  | -1                       | The interval in milliseconds to calculate the "ready state" of redis. When value < 1, no "ready state" will be calculated             |
+| awsS3Region                             | s3     |                          | The region of AWS S3 server, with local service such localstack, also need set a valid region                                         |
+| s3BucketName                            | s3     |                          | The S3 bucket name                                                                                                                    |
+| s3AccessKeyId                           | s3     |                          | The s3 access key Id                                                                                                                  |
+| s3SecretAccessKey                       | s3     |                          | The s3 secret access key                                                                                                              |
+| localS3                                 | s3     |                          | Set to true in order to use a local S3 instance instead of AWS                                                                        |
+| localS3Endpoint                         | s3     |                          | The endpoint/host to use in case that localS3 is set to true, e.g. 127.0.0.1 (in my case it had to be an IP)                          |
+| localS3Port                             | s3     |                          | The port to use in case that localS3 is set to true, e.g. 4566                                                                        |
+| createBucketIfNotExist                  | s3     |                          | create bucket if bucket not exist, related permission required                                                                        |
+
 
 ### Configuration util
 
@@ -249,10 +258,20 @@ JsonObject json  = new ModuleConfiguration().asJsonObject();
 ```
 
 ## Storage types
-Currently, there are two storage types supported. File system storage and redis storage.
+Currently, there are three storage types supported. File system storage, S3 storage and redis storage.
 
 ### File System Storage
 The data is stored hierarchically on the file system. This is the default storage type when not overridden in the configuration.
+
+### S3 storage
+The data is stored in a S3 instance.
+
+#### AWS S3
+See https://aws.amazon.com/s3 it is also possible to use a local instance using https://docs.localstack.cloud/user-guide/aws/s3/
+
+
+docker run --rm -p 4566:4566 -v ./s3:/var/lib/localstack localstack/localstack:s3-latest
+
 
 ### Redis Storage
 The data is stored in a redis database.

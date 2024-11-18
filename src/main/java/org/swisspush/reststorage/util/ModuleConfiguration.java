@@ -21,7 +21,7 @@ public class ModuleConfiguration {
     private static final Logger log = LoggerFactory.getLogger(ModuleConfiguration.class);
 
     public enum StorageType {
-        filesystem, redis
+        filesystem, redis, s3
     }
 
     private String root = ".";
@@ -70,6 +70,15 @@ public class ModuleConfiguration {
     private int maxRedisWaitingHandlers = 2048;
     private int maxStorageExpandSubresources = 1000;
 
+    private String s3BucketName = null;
+    private String awsS3Region = null;
+    private String s3AccessKeyId = null;
+    private String s3SecretAccessKey = null;
+    private boolean s3UseTlsConnection = true;
+    private boolean createBucketIfNotPresentYet = false;
+    private boolean localS3 = false;
+    private String localS3Endpoint = null;
+    private int localS3Port = 0;
 
     public ModuleConfiguration root(String root) {
         this.root = root;
@@ -292,6 +301,51 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration awsS3Region(String awsS3Region) {
+        this.awsS3Region = awsS3Region;
+        return this;
+    }
+
+    public ModuleConfiguration s3BucketName(String awsS3BucketName) {
+        this.s3BucketName = awsS3BucketName;
+        return this;
+    }
+
+    public ModuleConfiguration s3AccessKeyId(String awsS3AccessKeyId) {
+        this.s3AccessKeyId = awsS3AccessKeyId;
+        return this;
+    }
+
+    public ModuleConfiguration s3SecretAccessKey(String awsS3SecretAccessKey) {
+        this.s3SecretAccessKey = awsS3SecretAccessKey;
+        return this;
+    }
+
+    public ModuleConfiguration s3UseTlsConnection(boolean s3UseTlsConnection) {
+        this.s3UseTlsConnection = s3UseTlsConnection;
+        return this;
+    }
+
+    public ModuleConfiguration localS3Endpoint(String s3Endpoint) {
+        this.localS3Endpoint = s3Endpoint;
+        return this;
+    }
+
+    public ModuleConfiguration localS3Port(int s3Port) {
+        this.localS3Port = s3Port;
+        return this;
+    }
+
+    public ModuleConfiguration createBucketIfNotPresentYet(boolean createBucketIfNotExist) {
+        this.createBucketIfNotPresentYet = createBucketIfNotExist;
+        return this;
+    }
+
+    public ModuleConfiguration localS3(boolean localS3) {
+        this.localS3 = localS3;
+        return this;
+    }
+
     public String getRoot() {
         return root;
     }
@@ -463,6 +517,42 @@ public class ModuleConfiguration {
 
     public int getMaxStorageExpandSubresources() {
         return maxStorageExpandSubresources;
+    }
+
+    public String getAwsS3Region() {
+        return awsS3Region;
+    }
+
+    public String getS3BucketName() {
+        return s3BucketName;
+    }
+
+    public String getS3AccessKeyId() {
+        return s3AccessKeyId;
+    }
+
+    public String getS3SecretAccessKey() {
+        return s3SecretAccessKey;
+    }
+
+    public boolean getS3UseTlsConnection() {
+        return s3UseTlsConnection;
+    }
+
+    public String getLocalS3Endpoint() {
+        return localS3Endpoint;
+    }
+
+    public int getLocalS3Port() {
+        return localS3Port;
+    }
+
+    public boolean getCreateBucketIfNotPresentYet() {
+        return createBucketIfNotPresentYet;
+    }
+
+    public boolean isLocalS3() {
+        return localS3;
     }
 
     public JsonObject asJsonObject() {

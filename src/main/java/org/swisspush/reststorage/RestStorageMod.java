@@ -84,7 +84,7 @@ public class RestStorageMod extends AbstractVerticle {
                         moduleConfiguration.getS3AccessKeyId(), moduleConfiguration.getS3SecretAccessKey(),
                         moduleConfiguration.getS3UseTlsConnection(), moduleConfiguration.isLocalS3(),
                         moduleConfiguration.getS3Endpoint(), moduleConfiguration.getS3Port(),
-                        moduleConfiguration.getCreateBucketIfNotExist()));
+                        moduleConfiguration.getCreateBucketIfNotPresent()));
                 break;
             case redis:
                 createRedisStorage(vertx, moduleConfiguration).onComplete(event -> {

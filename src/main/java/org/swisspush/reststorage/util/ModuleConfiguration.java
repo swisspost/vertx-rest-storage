@@ -75,7 +75,7 @@ public class ModuleConfiguration {
     private String s3AccessKeyId = null;
     private String s3SecretAccessKey = null;
     private boolean s3UseTlsConnection = true;
-    private boolean createBucketIfNotExist = false;
+    private boolean createBucketIfNotPresent = false;
     private boolean localS3 = false;
     private String s3Endpoint = null;
     private int s3Port = 0;
@@ -336,8 +336,8 @@ public class ModuleConfiguration {
         return this;
     }
 
-    public ModuleConfiguration createBucketIfNotExist(boolean createBucketIfNotExist) {
-        this.createBucketIfNotExist = createBucketIfNotExist;
+    public ModuleConfiguration createBucketIfNotPresent(boolean createBucketIfNotPresent) {
+        this.createBucketIfNotPresent = createBucketIfNotPresent;
         return this;
     }
 
@@ -547,8 +547,8 @@ public class ModuleConfiguration {
         return s3Port;
     }
 
-    public boolean getCreateBucketIfNotExist() {
-        return createBucketIfNotExist;
+    public boolean getCreateBucketIfNotPresent() {
+        return createBucketIfNotPresent;
     }
 
     public boolean isLocalS3() {

@@ -41,6 +41,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisHost(), "localhost");
         testContext.assertEquals(config.getRedisPort(), 6379);
         testContext.assertFalse(config.isRedisEnableTls());
+        testContext.assertFalse(config.isSsl());
+        testContext.assertFalse(config.isTrustAll());
+        testContext.assertEquals("", config.getHostnameVerificationAlgorithm());
         testContext.assertNull(config.getRedisAuth());
         testContext.assertNull(config.getRedisUser());
         testContext.assertNull(config.getRedisPassword());
@@ -69,6 +72,9 @@ public class ModuleConfigurationTest {
                 .redisHost("anotherhost")
                 .redisPort(1234)
                 .redisEnableTls(true)
+                .setSsl(true)
+                .setTrustAll(true)
+                .setHostnameVerificationAlgorithm("HTTPS")
                 .redisUser("myUser")
                 .redisPassword("secretPassword")
                 .editorConfig(new HashMap<>() {{
@@ -111,6 +117,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisHost(), "anotherhost");
         testContext.assertEquals(config.getRedisPort(), 1234);
         testContext.assertTrue(config.isRedisEnableTls());
+        testContext.assertTrue(config.isSsl());
+        testContext.assertTrue(config.isTrustAll());
+        testContext.assertEquals(config.getHostnameVerificationAlgorithm(), "HTTPS");
         testContext.assertEquals(config.getRedisUser(), "myUser");
         testContext.assertEquals(config.getRedisPassword(), "secretPassword");
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
@@ -143,6 +152,9 @@ public class ModuleConfigurationTest {
         testContext.assertFalse(json.getBoolean("httpRequestHandlerAuthenticationEnabled"));
         testContext.assertTrue(json.getBoolean("httpRequestHandlerEnabled"));
         testContext.assertFalse(json.getBoolean("redisEnableTls"));
+        testContext.assertFalse(json.getBoolean("ssl"));
+        testContext.assertFalse(json.getBoolean("trustAll"));
+        testContext.assertEquals(json.getString("hostnameVerificationAlgorithm"), "");
         testContext.assertNull(json.getJsonObject("httpRequestHandlerUsername"));
         testContext.assertNull(json.getJsonObject("httpRequestHandlerPassword"));
         testContext.assertEquals(json.getString("prefix"), "");
@@ -183,6 +195,9 @@ public class ModuleConfigurationTest {
                 .redisReconnectDelaySec(0)
                 .redisPoolRecycleTimeoutMs(-1)
                 .redisEnableTls(true)
+                .setSsl(true)
+                .setTrustAll(true)
+                .setHostnameVerificationAlgorithm("HTTPS")
                 .editorConfig(new HashMap<>() {{
                     put("myKey", "myValue");
                 }})
@@ -225,6 +240,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(json.getInteger("redisReconnectDelaySec"), 1);
         testContext.assertEquals(json.getInteger("redisPoolRecycleTimeoutMs"), -1);
         testContext.assertTrue(json.getBoolean("redisEnableTls"));
+        testContext.assertTrue(json.getBoolean("ssl"));
+        testContext.assertTrue(json.getBoolean("trustAll"));
+        testContext.assertEquals(json.getString("hostnameVerificationAlgorithm"), "HTTPS");
         testContext.assertTrue(json.getBoolean("confirmCollectionDelete"));
         testContext.assertTrue(json.getBoolean("rejectStorageWriteOnLowMemory"));
         testContext.assertEquals(json.getLong("freeMemoryCheckIntervalMs"), 5000L);
@@ -262,6 +280,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisHost(), "localhost");
         testContext.assertEquals(config.getRedisPort(), 6379);
         testContext.assertFalse(json.getBoolean("redisEnableTls"));
+        testContext.assertFalse(json.getBoolean("ssl"));
+        testContext.assertFalse(json.getBoolean("trustAll"));
+        testContext.assertEquals(json.getString("hostnameVerificationAlgorithm"), "");
         testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 2048);
         testContext.assertEquals(config.getExpirablePrefix(), "rest-storage:expirable");
         testContext.assertEquals(config.getResourcesPrefix(), "rest-storage:resources");
@@ -295,6 +316,9 @@ public class ModuleConfigurationTest {
         json.put("redisReconnectDelaySec", -5);
         json.put("redisPoolRecycleTimeoutMs", -5);
         json.put("redisEnableTls", true);
+        json.put("ssl", true);
+        json.put("trustAll", true);
+        json.put("hostnameVerificationAlgorithm", "HTTPS");
         json.put("httpRequestHandlerEnabled", false);
         json.put("httpRequestHandlerAuthenticationEnabled", true);
         json.put("httpRequestHandlerUsername", "foo");
@@ -329,6 +353,9 @@ public class ModuleConfigurationTest {
         testContext.assertEquals(config.getRedisReconnectDelaySec(), 1);
         testContext.assertEquals(config.getRedisPoolRecycleTimeoutMs(), -5);
         testContext.assertTrue(config.isRedisEnableTls());
+        testContext.assertTrue(config.isSsl());
+        testContext.assertTrue(config.isTrustAll());
+        testContext.assertEquals(config.getHostnameVerificationAlgorithm(), "HTTPS");
         testContext.assertFalse(config.isHttpRequestHandlerEnabled());
         testContext.assertTrue(config.isHttpRequestHandlerAuthenticationEnabled());
         testContext.assertEquals(config.getHttpRequestHandlerUsername(), "foo");
@@ -396,7 +423,7 @@ public class ModuleConfigurationTest {
     }
 
     @Test
-    public void testRedisPublishMetrcisRefreshPeriodSec(TestContext testContext) {
+    public void testRedisPublishMetricsRefreshPeriodSec(TestContext testContext) {
         ModuleConfiguration config = new ModuleConfiguration()
                 .redisPublishMetrcisRefreshPeriodSec(10);
 

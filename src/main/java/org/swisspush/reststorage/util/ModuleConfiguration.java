@@ -24,6 +24,8 @@ public class ModuleConfiguration {
         filesystem, redis, s3
     }
 
+    private static final String DEFAULT_HOSTNAME_VERIFICATION_ALGORITHM = "";
+
     private String root = ".";
     private StorageType storageType = StorageType.filesystem;
     private int port = 8989;
@@ -37,6 +39,9 @@ public class ModuleConfiguration {
     private List<String> redisHosts = Collections.singletonList("localhost");
     private List<Integer> redisPorts = Collections.singletonList(6379);
     private boolean redisEnableTls;
+    private boolean ssl = false;
+    private boolean trustAll = false;
+    private String hostnameVerificationAlgorithm = DEFAULT_HOSTNAME_VERIFICATION_ALGORITHM;
     private RedisClientType redisClientType = RedisClientType.STANDALONE;
 
     /**
@@ -157,6 +162,26 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration redisEnableTls(boolean redisEnableTls) {
         this.redisEnableTls = redisEnableTls;
+        return this;
+    }
+
+    public ModuleConfiguration setSsl(boolean ssl) {
+        this.ssl = ssl;
+        return this;
+    }
+
+    public ModuleConfiguration setTrustAll(boolean trustAll) {
+        this.trustAll = trustAll;
+        return this;
+    }
+
+    public ModuleConfiguration setHostnameVerificationAlgorithm(String hostnameVerificationAlgorithm) {
+        if(hostnameVerificationAlgorithm == null) {
+            log.warn("hostnameVerificationAlgorithm can not be null!");
+            this.hostnameVerificationAlgorithm = DEFAULT_HOSTNAME_VERIFICATION_ALGORITHM;
+        } else {
+            this.hostnameVerificationAlgorithm = hostnameVerificationAlgorithm;
+        }
         return this;
     }
 
@@ -423,6 +448,18 @@ public class ModuleConfiguration {
 
     public boolean isRedisEnableTls() {
         return redisEnableTls;
+    }
+
+    public boolean isSsl() {
+        return ssl;
+    }
+
+    public boolean isTrustAll() {
+        return trustAll;
+    }
+
+    public String getHostnameVerificationAlgorithm() {
+        return hostnameVerificationAlgorithm;
     }
 
     public String getRedisAuth() {

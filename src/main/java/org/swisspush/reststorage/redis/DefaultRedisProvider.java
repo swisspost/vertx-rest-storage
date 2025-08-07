@@ -59,10 +59,10 @@ public class DefaultRedisProvider implements RedisProvider {
 
     @Override
     public Future<RedisAPI> redis() {
-        if(redisAPI == null) {
+        if (redisAPI == null) {
             return setupRedisClient();
         }
-        if(readyProvider == null) {
+        if (readyProvider == null) {
             return Future.succeededFuture(redisAPI);
         }
         return readyProvider.ready(redisAPI).compose(ready -> {
@@ -120,6 +120,15 @@ public class DefaultRedisProvider implements RedisProvider {
                     .setPoolRecycleTimeout(redisPoolRecycleTimeoutMs)
                     .setMaxWaitingHandlers(redisMaxPipelineWaitingSize)
                     .setType(configuration.getRedisClientType());
+
+            if (configuration.isRedisEnableTls()) {
+                redisOptions = redisOptions.setNetClientOptions(
+                        redisOptions.getNetClientOptions()
+                                .setSsl(configuration.isSsl())
+                                .setTrustAll(configuration.isTrustAll())
+                                .setHostnameVerificationAlgorithm(configuration.getHostnameVerificationAlgorithm())
+                );
+            }
 
             createConnectStrings().forEach(redisOptions::addConnectionString);
             redis = Redis.createClient(vertx, redisOptions);

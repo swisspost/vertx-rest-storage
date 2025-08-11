@@ -41,6 +41,8 @@ jobs:
         
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Release to maven central
         if: github.ref_name == 'master' && github.event_name != 'pull_request' && github.repository == 'swisspost/vertx-rest-storage'

@@ -56,6 +56,3 @@ jobs:
           CI_DEPLOY_USERNAME: ${{ secrets.CI_DEPLOY_USERNAME }}
           CI_DEPLOY_PASSWORD: ${{ secrets.CI_DEPLOY_PASSWORD }}
           CI_GPG_PASSPHRASE: ${{ secrets.CI_GPG_PASSPHRASE }}
-
-      - name: After release
-        run: bash <(curl -s https://codecov.io/bash)

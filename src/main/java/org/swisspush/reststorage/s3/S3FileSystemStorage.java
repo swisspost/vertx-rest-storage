@@ -11,6 +11,7 @@ import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.LockMode;
+import software.amazon.awssdk.auth.credentials.WebIdentityTokenFileCredentialsProvider;
 import software.amazon.nio.spi.s3.S3FileSystem;
 
 import java.io.File;
@@ -53,11 +54,15 @@ public class S3FileSystemStorage implements Storage {
     public static final String S3_PATH_SEPARATOR = "/";
 
     // use only one file system instance
-    private static S3FileSystem getFileSystem(URI uri) {
+    private static S3FileSystem getFileSystem(URI uri, WebIdentityTokenFileCredentialsProvider credentialsProvider) {
         if (fileSystem == null) {
             synchronized (S3FileSystem.class) {
                 if (fileSystem == null) {
                     fileSystem = (S3FileSystem) FileSystems.getFileSystem(uri);
+                    if (fileSystem != null) {
+
+                    }
+                    fileSystem.getConfiguration().withCredentials(credentialsProvider.resolveCredentials());
                 }
             }
         }
@@ -65,14 +70,14 @@ public class S3FileSystemStorage implements Storage {
     }
 
     public S3FileSystemStorage(Vertx vertx, RestStorageExceptionFactory exceptionFactory, String rootPath,
-                               String awsS3Region, String s3BucketName, String s3AccessKeyId, String s3SecretAccessKey,
+                               String awsS3Region, String s3BucketName, boolean useWebIdentityTokenFile, String s3AccessKeyId, String s3SecretAccessKey,
                                boolean useTlsConnection, boolean isLocalS3, String localS3Endpoint, int localS3Port, boolean createBucketIfNotPresentYet) {
         this.vertx = vertx;
         this.exceptionFactory = exceptionFactory;
         Objects.requireNonNull(s3BucketName, "BucketName must not be null");
         Objects.requireNonNull(awsS3Region, "Region must not be null");
         System.setProperty("aws.region", awsS3Region);
-
+        WebIdentityTokenFileCredentialsProvider credentialsProvider = null;
         if (isLocalS3) {
             // local S3, AWS SDK requires these two properties to be set
             System.setProperty("aws.accessKeyId", "local");
@@ -93,10 +98,17 @@ public class S3FileSystemStorage implements Storage {
             }
         } else {
             // AWS S3
-            Objects.requireNonNull(s3AccessKeyId, "AccessKeyId must not be null");
-            Objects.requireNonNull(s3SecretAccessKey, "SecretAccessKey must not be null");
-            System.setProperty("aws.accessKeyId", s3AccessKeyId);
-            System.setProperty("aws.secretAccessKey", s3SecretAccessKey);
+            if (useWebIdentityTokenFile) {
+                credentialsProvider =
+                        WebIdentityTokenFileCredentialsProvider.builder().build();
+                log.info("Using WebIdentityTokenFileCredentialsProvider");
+            } else {
+                Objects.requireNonNull(s3AccessKeyId, "AccessKeyId must not be null");
+                Objects.requireNonNull(s3SecretAccessKey, "SecretAccessKey must not be null");
+                System.setProperty("aws.accessKeyId", s3AccessKeyId);
+                System.setProperty("aws.secretAccessKey", s3SecretAccessKey);
+                log.info("Using AccessKey and Secret");
+            }
             s3BucketName = "s3://" + s3BucketName;
         }
 
@@ -113,7 +125,7 @@ public class S3FileSystemStorage implements Storage {
             }
         }
 
-        fileSystem = getFileSystem(uri);
+        fileSystem = getFileSystem(uri, credentialsProvider);
         root = fileSystem.getPath(rootPath);
 
         try (var pathStream = Files.walk(root)) {

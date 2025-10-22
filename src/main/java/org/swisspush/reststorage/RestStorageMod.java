@@ -81,6 +81,7 @@ public class RestStorageMod extends AbstractVerticle {
             case s3:
                 promise.complete(new S3FileSystemStorage(vertx, exceptionFactory, moduleConfiguration.getRoot(),
                         moduleConfiguration.getAwsS3Region(), moduleConfiguration.getS3BucketName(),
+                        moduleConfiguration.isUseWebIdentityTokenFile(),
                         moduleConfiguration.getS3AccessKeyId(), moduleConfiguration.getS3SecretAccessKey(),
                         moduleConfiguration.getS3UseTlsConnection(), moduleConfiguration.isLocalS3(),
                         moduleConfiguration.getLocalS3Endpoint(), moduleConfiguration.getLocalS3Port(),

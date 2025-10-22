@@ -59,10 +59,9 @@ public class S3FileSystemStorage implements Storage {
             synchronized (S3FileSystem.class) {
                 if (fileSystem == null) {
                     fileSystem = (S3FileSystem) FileSystems.getFileSystem(uri);
-                    if (fileSystem != null) {
-
+                    if (credentialsProvider != null) {
+                        fileSystem.getConfiguration().withCredentials(credentialsProvider.resolveCredentials());
                     }
-                    fileSystem.getConfiguration().withCredentials(credentialsProvider.resolveCredentials());
                 }
             }
         }

@@ -19,7 +19,6 @@ import java.util.Map;
 public class ModuleConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ModuleConfiguration.class);
-
     public enum StorageType {
         filesystem, redis, s3
     }
@@ -82,6 +81,7 @@ public class ModuleConfiguration {
     private boolean s3UseTlsConnection = true;
     private boolean createBucketIfNotPresentYet = false;
     private boolean localS3 = false;
+    private boolean useWebIdentityTokenFile = false;
     private String localS3Endpoint = null;
     private int localS3Port = 0;
 
@@ -371,6 +371,11 @@ public class ModuleConfiguration {
         return this;
     }
 
+    public ModuleConfiguration useWebIdentityTokenFile(boolean useWebIdentityTokenFile) {
+        this.useWebIdentityTokenFile = useWebIdentityTokenFile;
+        return this;
+    }
+
     public String getRoot() {
         return root;
     }
@@ -591,6 +596,8 @@ public class ModuleConfiguration {
     public boolean isLocalS3() {
         return localS3;
     }
+
+    public boolean isUseWebIdentityTokenFile() { return useWebIdentityTokenFile; }
 
     public JsonObject asJsonObject() {
         return JsonObject.mapFrom(this);

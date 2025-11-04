@@ -18,6 +18,8 @@ import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 
 import javax.net.ssl.SSLSession;
 import javax.security.cert.X509Certificate;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -45,7 +47,13 @@ public class EventBusAdapter {
 
     public void init(final Vertx vertx, String address, final Handler<HttpServerRequest> requestHandler) {
         vertx.eventBus().consumer(address, (Handler<Message<Buffer>>) message -> {
-            requestHandler.handle(new MappedHttpServerRequest(vertx, message, exceptionFactory));
+            try {
+                requestHandler.handle(new MappedHttpServerRequest(vertx, message, exceptionFactory));
+            } catch (RuntimeException ex) {
+                String msg = "TODO_63941634: Fix that broken requestHandler above (See also https://medium.com/swlh/yagni-and-kiss-cfd44b0654b6)";
+                log.error("{}", msg, log.isDebugEnabled() ? ex : null);
+                message.fail(500, msg);
+            }
         });
     }
 

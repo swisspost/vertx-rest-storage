@@ -411,11 +411,11 @@
     </profiles>
     <properties>
         <vertx.version>4.5.2</vertx.version>
-        <awssdk.version>2.31.40</awssdk.version>
-        <aws-crt.version>0.38.2</aws-crt.version>
-        <rxjava.version>3.1.10</rxjava.version>
+        <awssdk.version>2.39.2</awssdk.version>
+        <aws-crt.version>0.40.0</aws-crt.version>
+        <rxjava.version>3.1.12</rxjava.version>
         <caffeine.version>3.1.8</caffeine.version>
-        <nio.spi.s3.version>2.2.1</nio.spi.s3.version>
+        <nio.spi.s3.version>2.3.0</nio.spi.s3.version>
         <slf4j.version>2.0.10</slf4j.version>
         <junit.version>4.13.2</junit.version>
         <jackson.version>2.16.0</jackson.version>

@@ -60,7 +60,7 @@ public class S3FileSystemStorage implements Storage {
                 if (fileSystem == null) {
                     fileSystem = (S3FileSystem) FileSystems.getFileSystem(uri);
                     if (credentialsProvider != null) {
-                        fileSystem.getConfiguration().withCredentials(credentialsProvider.resolveCredentials());
+                        fileSystem.getConfiguration().withCredentialsProvider(credentialsProvider);
                     }
                 }
             }
@@ -99,7 +99,7 @@ public class S3FileSystemStorage implements Storage {
             // AWS S3
             if (useWebIdentityTokenFile) {
                 credentialsProvider =
-                        WebIdentityTokenFileCredentialsProvider.builder().build();
+                        WebIdentityTokenFileCredentialsProvider.builder().asyncCredentialUpdateEnabled(true).build();
                 log.info("Using WebIdentityTokenFileCredentialsProvider");
             } else {
                 Objects.requireNonNull(s3AccessKeyId, "AccessKeyId must not be null");

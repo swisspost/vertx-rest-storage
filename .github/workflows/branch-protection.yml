@@ -5,6 +5,9 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   check-source-branch:
     runs-on: ubuntu-latest

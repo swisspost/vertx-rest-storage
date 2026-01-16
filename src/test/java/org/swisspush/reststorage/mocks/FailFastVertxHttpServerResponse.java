@@ -149,6 +149,11 @@ public class FailFastVertxHttpServerResponse implements HttpServerResponse {
     }
 
     @Override
+    public Future<Void> writeHead() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public Future<Void> write(String chunk, String enc) {
         throw new UnsupportedOperationException(msg);
     }

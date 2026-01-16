@@ -103,6 +103,11 @@ public class FailFastVertxHttpServerRequest extends HttpServerRequestInternal {
     }
 
     @Override
+    public HostAndPort authority(boolean real) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public String host() {
         throw new UnsupportedOperationException(msg);
     }
@@ -144,6 +149,11 @@ public class FailFastVertxHttpServerRequest extends HttpServerRequestInternal {
 
     @Override
     public MultiMap params() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public MultiMap params(boolean semicolonIsNormalChar) {
         throw new UnsupportedOperationException(msg);
     }
 

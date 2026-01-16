@@ -6,8 +6,10 @@ import io.vertx.core.buffer.impl.BufferImpl;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.http.HttpVersion;
 import io.vertx.core.http.impl.HttpServerRequestInternal;
 import io.vertx.core.http.impl.headers.HeadersMultiMap;
+import io.vertx.core.net.HostAndPort;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
@@ -58,6 +60,7 @@ public class RestStorageHandlerTest {
         request = Mockito.mock(HttpServerRequestInternal.class);
         response = Mockito.mock(HttpServerResponse.class);
 
+        when(request.version()).thenReturn(HttpVersion.HTTP_1_0);
         when(request.method()).thenReturn(HttpMethod.PUT);
         when(request.uri()).thenReturn("/some/resource");
         when(request.path()).thenReturn("/some/resource");
@@ -504,6 +507,11 @@ public class RestStorageHandlerTest {
                 private final HeadersMultiMap headers = new HeadersMultiMap();
 
                 @Override
+                public HttpVersion version() {
+                    return HttpVersion.HTTP_1_0;
+                }
+
+                @Override
                 public HttpMethod method() {
                     return HttpMethod.PUT;
                 }
@@ -546,6 +554,11 @@ public class RestStorageHandlerTest {
                 @Override
                 public String query() {
                     return "";
+                }
+
+                @Override
+                public HostAndPort authority() {
+                    return null;
                 }
             };
         }

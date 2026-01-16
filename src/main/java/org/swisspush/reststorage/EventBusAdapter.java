@@ -575,7 +575,7 @@ public class EventBusAdapter {
 
         @Override
         public String getParam(String paramName) {
-            return params.get(paramName);
+            return params().get(paramName);
         }
 
         @Override

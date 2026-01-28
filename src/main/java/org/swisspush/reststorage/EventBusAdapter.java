@@ -152,6 +152,11 @@ public class EventBusAdapter {
         }
 
         @Override
+        public HostAndPort authority(boolean real) {
+            return null;
+        }
+
+        @Override
         public String host() {
             throw new UnsupportedOperationException();
         }
@@ -268,6 +273,11 @@ public class EventBusAdapter {
 
                     @Override
                     public HttpServerResponse endHandler(Handler<Void> handler) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public Future<Void> writeHead() {
                         throw new UnsupportedOperationException();
                     }
 
@@ -560,8 +570,16 @@ public class EventBusAdapter {
 
         @Override
         public MultiMap params() {
+            return params(false);
+        }
+
+        @Override
+        public MultiMap params(boolean semicolonIsNormalChar) {
             if (params == null) {
-                QueryStringDecoder queryStringDecoder = new QueryStringDecoder(uri(), paramsCharset);
+                QueryStringDecoder queryStringDecoder = QueryStringDecoder.builder()
+                        .charset(paramsCharset)
+                        .semicolonIsNormalChar(semicolonIsNormalChar)
+                        .build(uri());
                 Map<String, List<String>> prms = queryStringDecoder.parameters();
                 params = new HeadersMultiMap();
                 if (!prms.isEmpty()) {
@@ -575,7 +593,7 @@ public class EventBusAdapter {
 
         @Override
         public String getParam(String paramName) {
-            return params.get(paramName);
+            return params().get(paramName);
         }
 
         @Override

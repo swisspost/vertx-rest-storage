@@ -202,6 +202,11 @@ public class FailFastVertxWebRoutingContext implements RoutingContext {
     }
 
     @Override
+    public UserContext userContext() {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
     public Throwable failure() {
         throw new UnsupportedOperationException(msg);
     }

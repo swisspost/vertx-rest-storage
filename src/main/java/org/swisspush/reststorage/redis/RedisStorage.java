@@ -224,49 +224,32 @@ public class RedisStorage implements Storage {
                     return;
                 }
 
-                long totalSystemMemory;
-                try {
-                    Optional<String> totalSystemMemoryOpt = memoryInfo.result().toString()
-                            .lines()
-                            .filter(source -> source.startsWith("total_system_memory:"))
-                            .findAny();
-                    if (totalSystemMemoryOpt.isEmpty()) {
-                        log.warn("No 'total_system_memory' section received from redis. Unable to calculate the current memory usage");
-                        promise.complete(Optional.empty());
-                        return;
-                    }
-                    totalSystemMemory = Long.parseLong(totalSystemMemoryOpt.get().split(":")[1]);
-                    if (totalSystemMemory == 0L) {
-                        log.warn("'total_system_memory' value 0 received from redis. Unable to calculate the current memory usage");
-                        promise.complete(Optional.empty());
-                        return;
-                    }
+                long referenceMemory;
+                String infoResponse = memoryInfo.result().toString();
 
-                } catch (NumberFormatException ex) {
-                    logPropertyWarning("total_system_memory", ex);
+                Optional<Long> totalSystemMemoryOpt = parseMemoryProperty(infoResponse, "total_system_memory");
+                Optional<Long> maxmemoryOpt = parseMemoryProperty(infoResponse, "maxmemory");
+
+                if (totalSystemMemoryOpt.isPresent() && totalSystemMemoryOpt.get() > 0) {
+                    referenceMemory = totalSystemMemoryOpt.get();
+                } else if (maxmemoryOpt.isPresent() && maxmemoryOpt.get() > 0) {
+                    referenceMemory = maxmemoryOpt.get();
+                } else {
+                    log.warn("Neither 'total_system_memory' nor 'maxmemory' available from redis (or both are zero). " +
+                            "Unable to calculate the current memory usage");
                     promise.complete(Optional.empty());
                     return;
                 }
 
-                long usedMemory;
-                try {
-                    Optional<String> usedMemoryOpt = memoryInfo.result().toString()
-                            .lines()
-                            .filter(source -> source.startsWith("used_memory:"))
-                            .findAny();
-                    if (usedMemoryOpt.isEmpty()) {
-                        log.warn("No 'used_memory' section received from redis. Unable to calculate the current memory usage");
-                        promise.complete(Optional.empty());
-                        return;
-                    }
-                    usedMemory = Long.parseLong(usedMemoryOpt.get().split(":")[1]);
-                } catch (NumberFormatException ex) {
-                    logPropertyWarning("used_memory", ex);
+                Optional<Long> usedMemoryOpt = parseMemoryProperty(infoResponse, "used_memory");
+                if (usedMemoryOpt.isEmpty()) {
+                    log.warn("No 'used_memory' section received from redis. Unable to calculate the current memory usage");
                     promise.complete(Optional.empty());
                     return;
                 }
+                long usedMemory = usedMemoryOpt.get();
 
-                float currentMemoryUsagePercentage = ((float) usedMemory / totalSystemMemory) * 100;
+                float currentMemoryUsagePercentage = ((float) usedMemory / referenceMemory) * 100;
                 if (currentMemoryUsagePercentage > MAX_PERCENTAGE) {
                     currentMemoryUsagePercentage = MAX_PERCENTAGE;
                 } else if (currentMemoryUsagePercentage < MIN_PERCENTAGE) {
@@ -279,9 +262,23 @@ public class RedisStorage implements Storage {
         return promise.future();
     }
 
-    private void logPropertyWarning(String property, Exception ex) {
-        log.warn("No or invalid '{}' value received from redis. Unable to calculate the current memory usage.",
-                property, ex);
+    private Optional<Long> parseMemoryProperty(String infoResponse, String propertyName) {
+        String prefix = propertyName + ":";
+        return infoResponse.lines()
+                .filter(line -> line.startsWith(prefix))
+                .findFirst()
+                .flatMap(line -> {
+                    try {
+                        String[] parts = line.split(":", 2);
+                        if (parts.length < 2 || parts[1].isEmpty()) {
+                            return Optional.empty();
+                        }
+                        return Optional.of(Long.parseLong(parts[1]));
+                    } catch (NumberFormatException ex) {
+                        log.debug("Failed to parse '{}' value from redis INFO response", propertyName, ex);
+                        return Optional.empty();
+                    }
+                });
     }
 
     private void logCleanupResult(Object resultEvent) {

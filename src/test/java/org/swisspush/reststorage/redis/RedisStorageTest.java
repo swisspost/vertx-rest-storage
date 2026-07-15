@@ -304,6 +304,188 @@ public class RedisStorageTest {
     }
 
     @Test
+    public void testCalculateCurrentMemoryUsageMaxmemoryFallbackWhenTotalSystemMemoryMissing(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:75");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("maxmemory:100");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertTrue(optionalAsyncResult.result().isPresent());
+            testContext.assertEquals(75.0f, optionalAsyncResult.result().get());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testCalculateCurrentMemoryUsageMaxmemoryFallbackWhenTotalSystemMemoryZero(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:50");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:0");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("maxmemory:200");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertTrue(optionalAsyncResult.result().isPresent());
+            testContext.assertEquals(25.0f, optionalAsyncResult.result().get());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testCalculateCurrentMemoryUsageBothTotalSystemMemoryAndMaxmemoryMissing(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:75");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertFalse(optionalAsyncResult.result().isPresent());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testCalculateCurrentMemoryUsageBothTotalSystemMemoryAndMaxmemoryZero(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:75");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:0");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("maxmemory:0");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertFalse(optionalAsyncResult.result().isPresent());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testCalculateCurrentMemoryUsageTotalSystemMemoryPreferredOverMaxmemory(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:50");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("total_system_memory:100");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("maxmemory:200");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertTrue(optionalAsyncResult.result().isPresent());
+            testContext.assertEquals(50.0f, optionalAsyncResult.result().get());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testCalculateCurrentMemoryUsageMaxmemoryEmptyValue(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:75");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("maxmemory:");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertFalse(optionalAsyncResult.result().isPresent());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testCalculateCurrentMemoryUsageMaxmemoryNonNumeric(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.info(eq(Collections.singletonList("memory")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    Buffer buffer = new BufferImpl();
+                    buffer.appendString("used_memory:75");
+                    buffer.appendString(System.lineSeparator());
+                    buffer.appendString("maxmemory:abc");
+                    return BulkType.create(buffer, false);
+                }
+            });
+            return null;
+        });
+
+        storage.calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> {
+            testContext.assertTrue(optionalAsyncResult.succeeded());
+            testContext.assertFalse(optionalAsyncResult.result().isPresent());
+            async.complete();
+        });
+    }
+
+    @Test
     public void testCalculateCurrentMemoryUsage(TestContext testContext) {
         Async async = testContext.async(4);
 

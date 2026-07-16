@@ -25,6 +25,7 @@ public class ModuleConfiguration {
 
     private static final String DEFAULT_HOSTNAME_VERIFICATION_ALGORITHM = "";
 
+    private String identifier = "main";
     private String root = ".";
     private StorageType storageType = StorageType.filesystem;
     private int port = 8989;
@@ -84,6 +85,11 @@ public class ModuleConfiguration {
     private boolean useWebIdentityTokenFile = false;
     private String localS3Endpoint = null;
     private int localS3Port = 0;
+
+    public ModuleConfiguration identifier(String identifier) {
+        this.identifier = identifier;
+        return this;
+    }
 
     public ModuleConfiguration root(String root) {
         this.root = root;
@@ -374,6 +380,10 @@ public class ModuleConfiguration {
     public ModuleConfiguration useWebIdentityTokenFile(boolean useWebIdentityTokenFile) {
         this.useWebIdentityTokenFile = useWebIdentityTokenFile;
         return this;
+    }
+
+    public String getIdentifier() {
+        return identifier;
     }
 
     public String getRoot() {

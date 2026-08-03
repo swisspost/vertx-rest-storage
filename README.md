@@ -143,7 +143,7 @@ To override this for a single request, add the following request header with an 
 The redis storage provides a feature to reject PUT requests when the memory gets low. The information about the used memory is provided by the
 redis _INFO_ command.
 
-`Attention:` The stats received by the _INFO_ command depend on the redis version. The required stats are _used_memory_ and _total_system_memory_. Without these stats, the feature is disabled!
+`Attention:` The stats received by the _INFO_ command depend on the redis version. The required stats are _used_memory_ and either _total_system_memory_ or _maxmemory_. When _total_system_memory_ is unavailable (e.g., older Redis versions, Valkey, or certain cluster configurations), _maxmemory_ is used as a fallback. Without at least one of these stats, the feature is disabled!
 
 #### Configuration
 To enable the feature, set the _rejectStorageWriteOnLowMemory_ property (ModuleConfiguration) to _true_. Additionally, the _freeMemoryCheckIntervalMs_ property can be

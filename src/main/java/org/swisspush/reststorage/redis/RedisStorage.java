@@ -86,6 +86,7 @@ public class RedisStorage implements Storage {
     private Optional<Float> currentMemoryUsageOptional = Optional.empty();
 
     private final String ID;
+    private final String storageIdentifier;
     private final String hostAndPort;
 
     private static final String redisProviderFailMsg = "redisProvider.redis() failed";
@@ -111,6 +112,7 @@ public class RedisStorage implements Storage {
         this.decimalFormat = new DecimalFormat();
         this.decimalFormat.setMaximumFractionDigits(1);
 
+        this.storageIdentifier = config.getIdentifier();
         this.ID = UUID.randomUUID().toString();
         this.hostAndPort = config.getRedisHost() + ":" + config.getPort();
         this.lock = new RedisBasedLock(redisProvider, exceptionFactory);
@@ -166,11 +168,11 @@ public class RedisStorage implements Storage {
                         token(STORAGE_CLEANUP_TASK_LOCK), lockExpiry(resourceCleanupIntervalSec))
                 .onComplete(lockEvent -> {
                     if( lockEvent.failed() ){
-                        log.error("Could not acquire lock '{}'.", STORAGE_CLEANUP_TASK_LOCK, lockEvent.cause());
+                        log.error("Could not acquire lock '{}' for storage {}.", STORAGE_CLEANUP_TASK_LOCK, storageIdentifier, lockEvent.cause());
                         return;
                     }
                     if( !lockEvent.result() ){
-                        log.debug("Lock already taken '{}'", STORAGE_CLEANUP_TASK_LOCK);
+                        log.debug("Lock already taken '{}' for storage {}", STORAGE_CLEANUP_TASK_LOCK, storageIdentifier);
                         return;
                     }
                     cleanup(cleanupEvent -> {
@@ -210,7 +212,7 @@ public class RedisStorage implements Storage {
 
         redisProvider.redis().onComplete( ev -> {
             if( ev.failed() ){
-                log.error("Unable to get memory information from redis",
+                log.error("Unable to get memory information from redis storage {}", storageIdentifier,
                         exceptionFactory.newException("redisProvider.redis() failed", ev.cause()));
                 promise.complete(Optional.empty());
                 return;
@@ -218,70 +220,67 @@ public class RedisStorage implements Storage {
             var redisAPI = ev.result();
             redisAPI.info(Collections.singletonList("memory"), memoryInfo -> {
                 if (memoryInfo.failed()) {
-                    log.error("Unable to get memory information from redis",
+                    log.error("Unable to get memory information from redis storage {}", storageIdentifier,
                             exceptionFactory.newException("redisAPI.info([\"memory\"]) failed", memoryInfo.cause()));
                     promise.complete(Optional.empty());
                     return;
                 }
 
-                long totalSystemMemory;
-                try {
-                    Optional<String> totalSystemMemoryOpt = memoryInfo.result().toString()
-                            .lines()
-                            .filter(source -> source.startsWith("total_system_memory:"))
-                            .findAny();
-                    if (totalSystemMemoryOpt.isEmpty()) {
-                        log.warn("No 'total_system_memory' section received from redis. Unable to calculate the current memory usage");
-                        promise.complete(Optional.empty());
-                        return;
-                    }
-                    totalSystemMemory = Long.parseLong(totalSystemMemoryOpt.get().split(":")[1]);
-                    if (totalSystemMemory == 0L) {
-                        log.warn("'total_system_memory' value 0 received from redis. Unable to calculate the current memory usage");
-                        promise.complete(Optional.empty());
-                        return;
-                    }
+                long referenceMemory;
+                String infoResponse = memoryInfo.result().toString();
 
-                } catch (NumberFormatException ex) {
-                    logPropertyWarning("total_system_memory", ex);
+                Optional<Long> totalSystemMemoryOpt = parseMemoryProperty(infoResponse, "total_system_memory");
+                Optional<Long> maxmemoryOpt = parseMemoryProperty(infoResponse, "maxmemory");
+
+                if (totalSystemMemoryOpt.isPresent() && totalSystemMemoryOpt.get() > 0) {
+                    referenceMemory = totalSystemMemoryOpt.get();
+                } else if (maxmemoryOpt.isPresent() && maxmemoryOpt.get() > 0) {
+                    referenceMemory = maxmemoryOpt.get();
+                } else {
+                    log.warn("Neither 'total_system_memory' nor 'maxmemory' available from redis storage {} (or both are zero). " +
+                            "Unable to calculate the current memory usage", storageIdentifier);
                     promise.complete(Optional.empty());
                     return;
                 }
 
-                long usedMemory;
-                try {
-                    Optional<String> usedMemoryOpt = memoryInfo.result().toString()
-                            .lines()
-                            .filter(source -> source.startsWith("used_memory:"))
-                            .findAny();
-                    if (usedMemoryOpt.isEmpty()) {
-                        log.warn("No 'used_memory' section received from redis. Unable to calculate the current memory usage");
-                        promise.complete(Optional.empty());
-                        return;
-                    }
-                    usedMemory = Long.parseLong(usedMemoryOpt.get().split(":")[1]);
-                } catch (NumberFormatException ex) {
-                    logPropertyWarning("used_memory", ex);
+                Optional<Long> usedMemoryOpt = parseMemoryProperty(infoResponse, "used_memory");
+                if (usedMemoryOpt.isEmpty()) {
+                    log.warn("No 'used_memory' section received from redis storage {}. Unable to calculate the current memory usage", storageIdentifier);
                     promise.complete(Optional.empty());
                     return;
                 }
+                long usedMemory = usedMemoryOpt.get();
 
-                float currentMemoryUsagePercentage = ((float) usedMemory / totalSystemMemory) * 100;
+                float currentMemoryUsagePercentage = ((float) usedMemory / referenceMemory) * 100;
                 if (currentMemoryUsagePercentage > MAX_PERCENTAGE) {
                     currentMemoryUsagePercentage = MAX_PERCENTAGE;
                 } else if (currentMemoryUsagePercentage < MIN_PERCENTAGE) {
                     currentMemoryUsagePercentage = MIN_PERCENTAGE;
                 }
-                log.info("Current memory usage is {}%", decimalFormat.format(currentMemoryUsagePercentage));
+                log.info("Current memory usage of storage {} is {}%", storageIdentifier, decimalFormat.format(currentMemoryUsagePercentage));
                 promise.complete(Optional.of(currentMemoryUsagePercentage));
             });
         });
         return promise.future();
     }
 
-    private void logPropertyWarning(String property, Exception ex) {
-        log.warn("No or invalid '{}' value received from redis. Unable to calculate the current memory usage.",
-                property, ex);
+    private Optional<Long> parseMemoryProperty(String infoResponse, String propertyName) {
+        String prefix = propertyName + ":";
+        return infoResponse.lines()
+                .filter(line -> line.startsWith(prefix))
+                .findFirst()
+                .flatMap(line -> {
+                    try {
+                        String[] parts = line.split(":", 2);
+                        if (parts.length < 2 || parts[1].isEmpty()) {
+                            return Optional.empty();
+                        }
+                        return Optional.of(Long.parseLong(parts[1].trim()));
+                    } catch (NumberFormatException ex) {
+                        log.debug("Failed to parse '{}' value from redis storage {} INFO response", propertyName, storageIdentifier, ex);
+                        return Optional.empty();
+                    }
+                });
     }
 
     private void logCleanupResult(Object resultEvent) {
@@ -337,7 +336,7 @@ public class RedisStorage implements Storage {
          * @param luaScriptType
          */
         private void composeLuaScript(LuaScript luaScriptType) {
-            log.info("read the lua script for script type: {} with logoutput: {}", luaScriptType, logoutput);
+            log.info("read the lua script for script type: {} in storage {} with logoutput: {}", luaScriptType, storageIdentifier, logoutput);
 
             // It is not possible to evalsha or eval inside lua scripts,
             // so we wrap the cleanupscript around the deletescript manually to avoid code duplication.
@@ -411,7 +410,7 @@ public class RedisStorage implements Storage {
                         log.debug("RedisStorage script already exists in redis cache: {}", luaScriptType);
                         redisCommand.exec(executionCounterIncr);
                     } else {
-                        log.info("load lua script for script type: {} logoutput: {}", luaScriptType, logoutput);
+                        log.info("load lua script for script type: {} in storage {} logoutput: {}", luaScriptType, storageIdentifier, logoutput);
                         redisAPI.script(Arrays.asList("load", script), loadEv -> {
                             if (loadEv.failed()) {
                                 log.error("Loading of lua script {} failed", luaScriptType,
@@ -419,13 +418,13 @@ public class RedisStorage implements Storage {
                                 return;
                             }
                             String newSha = loadEv.result().toString();
-                            log.info("got sha from redis for lua script: {}: {}", luaScriptType, newSha);
+                            log.info("got sha from redis storage {} for lua script: {}: {}", storageIdentifier, luaScriptType, newSha);
                             if (!newSha.equals(sha)) {
                                 log.warn("the sha calculated by myself: {} doesn't match with the sha from redis: {}. " +
                                         "We use the sha from redis", sha, newSha);
                             }
                             sha = newSha;
-                            log.info("execute redis command for script type: {} with new sha: {}", luaScriptType, sha);
+                            log.info("execute redis command in storage {} for script type: {} with new sha: {}", storageIdentifier, luaScriptType, sha);
                             redisCommand.exec(executionCounterIncr);
                         });
                     }
@@ -639,10 +638,10 @@ public class RedisStorage implements Storage {
                         Throwable ex = evalShaEv.cause();
                         String message = ex.getMessage();
                         if (message != null && message.startsWith("NOSCRIPT")) {
-                            log.warn("get script couldn't be found, reload it", ex);
-                            log.warn("amount the script got loaded: {}", executionCounter);
+                            log.warn("get script couldn't be found in storage {}, reload it", storageIdentifier, ex);
+                            log.warn("amount the script in storage {} got loaded: {}", storageIdentifier, executionCounter);
                             if (executionCounter > 10) {
-                                log.error("amount the script got loaded is higher than 10, we abort");
+                                log.error("amount the script in storage {} got loaded is higher than 10, we abort", storageIdentifier);
                             } else {
                                 luaScripts.get(LuaScript.GET).loadLuaScript(new Get(keys, arguments, handler), executionCounter);
                             }
@@ -695,7 +694,7 @@ public class RedisStorage implements Storage {
 
             redisProvider.redis().onComplete( redisEv -> {
                 if (redisEv.failed()) {
-                    log.error("StorageExpand request failed with message",
+                    log.error("StorageExpand request in storage {} failed with message", storageIdentifier,
                             exceptionFactory.newException(redisProviderFailMsg, redisEv.cause()));
                     error(handler, redisProviderFailMsg);
                     return;
@@ -706,17 +705,17 @@ public class RedisStorage implements Storage {
                         Throwable ex = evalShaEv.cause();
                         String message = ex.getMessage();
                         if (message != null && message.startsWith("NOSCRIPT")) {
-                            log.warn("storageExpand script couldn't be found, reload it",
+                            log.warn("storageExpand script in storage {} couldn't be found, reload it", storageIdentifier,
                                 exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                             log.warn("amount the script got loaded: {}", executionCounter);
                             if (executionCounter > 10) {
-                                log.error("amount the script got loaded is higher than 10, we abort");
+                                log.error("amount the script got loaded in storage {} is higher than 10, we abort", storageIdentifier);
                             } else {
                                 luaScripts.get(LuaScript.STORAGE_EXPAND).loadLuaScript(
                                         new StorageExpand(keys, arguments, handler, etag), executionCounter);
                             }
                         } else {
-                            log.error("StorageExpand request failed with message",
+                            log.error("StorageExpand request in storage {} failed with message", storageIdentifier,
                                 exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                         }
                         return;
@@ -809,7 +808,7 @@ public class RedisStorage implements Storage {
                         handler.handle(r);
                     } else {
                         if (log.isInfoEnabled()) {
-                            log.info("stacktrace, because handler cannot receive it", exceptionFactory.newException(
+                            log.info("stacktrace in storage {}, because handler cannot receive it", storageIdentifier, exceptionFactory.newException(
                                 "GZIPUtil.decompressResource() failed", decompressedResult.cause()));
                         }
                         error(handler, "Error during decompression of resource: " + decompressedResult.cause().getMessage());
@@ -1030,7 +1029,7 @@ public class RedisStorage implements Storage {
 
             redisProvider.redis().onComplete(redisEv -> {
                 if (redisEv.failed()) {
-                    log.error("PUT request failed with message",
+                    log.error("PUT request in storage {} failed with message", storageIdentifier,
                             exceptionFactory.newException(redisProviderFailMsg, redisEv.cause()));
                     error(handler, redisProviderFailMsg);
                     return;
@@ -1039,7 +1038,7 @@ public class RedisStorage implements Storage {
                 redisAPI.evalsha(args, evalShaEv -> {
                     if (evalShaEv.succeeded()) {
                         String result = evalShaEv.result().toString();
-                        log.trace("RedisStorage successful put. Result: {}", result);
+                        log.trace("RedisStorage successful put in storage {}. Result: {}", storageIdentifier, result);
                         if (result != null && result.startsWith("existingCollection")) {
                             CollectionResource c = new CollectionResource();
                             handler.handle(c);
@@ -1058,10 +1057,10 @@ public class RedisStorage implements Storage {
                         Throwable ex = evalShaEv.cause();
                         String message = ex.getMessage();
                         if (message != null && message.startsWith("NOSCRIPT")) {
-                            log.warn("put script couldn't be found, reload it", ex);
-                            log.warn("amount the script got loaded: {}", executionCounter);
+                            log.warn("put script couldn't be found in storage {}, reload it", storageIdentifier, ex);
+                            log.warn("amount the script in storage {} got loaded: {}", storageIdentifier, executionCounter);
                             if (executionCounter > 10) {
-                                log.error("amount the script got loaded is higher than 10, we abort");
+                                log.error("amount the script in storage {} got loaded is higher than 10, we abort", storageIdentifier);
                             } else {
                                 luaScripts.get(LuaScript.PUT).loadLuaScript(new Put(d, keys, arguments, handler), executionCounter);
                             }
@@ -1070,7 +1069,7 @@ public class RedisStorage implements Storage {
                                 exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                             d.errorHandler.handle(ex);
                         }else{
-                            log.error("PUT request failed", exceptionFactory.newException("redisAPI.evalsha() failed", ex));
+                            log.error("PUT request in storage {} failed", storageIdentifier, exceptionFactory.newException("redisAPI.evalsha() failed", ex));
                         }
                     }
                 });
@@ -1126,7 +1125,7 @@ public class RedisStorage implements Storage {
 
             redisProvider.redis().onComplete( ev -> {
                 if (ev.failed()) {
-                    log.error("DELETE request failed with message",
+                    log.error("DELETE request in storage {} failed with message", storageIdentifier,
                             exceptionFactory.newException(redisProviderFailMsg, ev.cause()));
                     error(handler, redisProviderFailMsg);
                     return;
@@ -1136,10 +1135,10 @@ public class RedisStorage implements Storage {
                     if( shaEv.failed() ){
                         Throwable ex = shaEv.cause();
                         if (ex.getMessage().startsWith("NOSCRIPT")) {
-                            log.warn("delete script couldn't be found, reload it", ex);
-                            log.warn("amount the script got loaded: {}", executionCounter);
+                            log.warn("delete script in storage {} couldn't be found, reload it", storageIdentifier, ex);
+                            log.warn("amount the script in storage {} got loaded: {}", storageIdentifier, executionCounter);
                             if (executionCounter > 10) {
-                                log.error("amount the script got loaded is higher than 10, we abort");
+                                log.error("amount the script in storage {} got loaded is higher than 10, we abort", storageIdentifier);
                             } else {
                                 luaScripts.get(LuaScript.DELETE).loadLuaScript(new Delete(keys, arguments, handler), executionCounter);
                             }
@@ -1198,7 +1197,7 @@ public class RedisStorage implements Storage {
 
         redisProvider.redis().onComplete(ev -> {
             if (ev.failed()) {
-                log.error("Redis: cleanupRecursive failed", exceptionFactory.newException(
+                log.error("Redis: cleanupRecursive failed in storage {}", storageIdentifier, exceptionFactory.newException(
                     "redisProvider.redis() failed", ev.cause()));
                 return;
             }
@@ -1207,7 +1206,7 @@ public class RedisStorage implements Storage {
                 if( event.failed() ){
                     Throwable ex = event.cause();
                     if (ex.getMessage().startsWith("NOSCRIPT")) {
-                        log.warn("the cleanup script is not loaded. Load it and exit. The Cleanup will success the next time", ex);
+                        log.warn("the cleanup script in storage {} is not loaded. Load it and exit. The Cleanup will success the next time", storageIdentifier, ex);
                         luaScripts.get(LuaScript.CLEANUP).loadLuaScript(new RedisCommandDoNothing(), 0);
                     }else {
                         if (log.isInfoEnabled()) log.info("stacktrace", exceptionFactory.newException("redisApi.evalsha() failed", ex));
@@ -1323,7 +1322,7 @@ public class RedisStorage implements Storage {
         try {
             cleanupResourcesAmountUsed = Long.parseLong(cleanupResourcesAmountStr);
         } catch (Exception e) {
-            log.error("Got invalid response. Number expected but got {}", cleanupResourcesAmountStr, e);
+            log.error("Got invalid response in storage {}. Number expected but got {}", storageIdentifier, cleanupResourcesAmountStr, e);
         }
         cleanupRecursive(handler, 0, cleanupResourcesAmountUsed, CLEANUP_BULK_SIZE);
     }

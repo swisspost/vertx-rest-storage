@@ -418,7 +418,7 @@
         <nio.spi.s3.version>2.3.0</nio.spi.s3.version>
         <slf4j.version>2.0.10</slf4j.version>
         <junit.version>4.13.2</junit.version>
-        <jackson.version>2.16.0</jackson.version>
+        <jackson.version>2.18.6</jackson.version>
         <hamcrest.version>2.2</hamcrest.version>
         <commons-codec.version>1.16.0</commons-codec.version>
         <commons-lang.version>2.6</commons-lang.version>

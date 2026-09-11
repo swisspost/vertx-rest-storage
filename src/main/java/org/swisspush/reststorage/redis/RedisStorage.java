@@ -535,8 +535,11 @@ public class RedisStorage implements Storage {
                         handler.handle(Buffer.buffer(bytes));
                         position += toRead;
                         doRead();
-                    } else {
+                    } else if (endHandler != null) {
                         endHandler.handle(null);
+                    } else {
+                        log.warn("ByteArrayReadStream: reached end of content but no endHandler is set " +
+                                "(handler() must be called after endHandler()); end signal will be lost");
                     }
                 }
             });
@@ -1244,6 +1247,7 @@ public class RedisStorage implements Storage {
             if (ev.failed()) {
                 log.error("Redis: cleanupRecursive failed in storage {}", storageIdentifier, exceptionFactory.newException(
                     "redisProvider.redis() failed", ev.cause()));
+                onError.accept(ev.cause());
                 return;
             }
             var redisAPI = ev.result();

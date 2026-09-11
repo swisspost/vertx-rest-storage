@@ -416,15 +416,15 @@ public class RedisStoragePartitioningTest {
             List<Invocation> zcountCalls = api.byCommand(Command.ZCOUNT);
             context.assertEquals(2, zcountCalls.size());
 
-            DocumentResource d = (DocumentResource) resource;
+            DocumentResource d = resource;
             Buffer buf = Buffer.buffer();
-            d.readStream.handler(buf::appendBuffer);
             d.readStream.endHandler(nothing -> {
                 JsonObject json = new JsonObject(buf.toString());
                 context.assertEquals(0L, json.getLong("cleanedResources"));
                 context.assertEquals(5, json.getInteger("expiredResourcesLeft"));
                 async.complete();
             });
+            d.readStream.handler(buf::appendBuffer);
         }, "100");
     }
 
@@ -440,15 +440,15 @@ public class RedisStoragePartitioningTest {
         RedisStorage storage = newStorage(true, api);
 
         storage.cleanup(resource -> {
-            DocumentResource d = (DocumentResource) resource;
+            DocumentResource d = resource;
             Buffer buf = Buffer.buffer();
-            d.readStream.handler(buf::appendBuffer);
             d.readStream.endHandler(nothing -> {
                 JsonObject json = new JsonObject(buf.toString());
                 context.assertEquals(0L, json.getLong("cleanedResources"));
                 context.assertEquals(0, json.getInteger("expiredResourcesLeft"));
                 async.complete();
             });
+            d.readStream.handler(buf::appendBuffer);
         }, "100");
     }
 }

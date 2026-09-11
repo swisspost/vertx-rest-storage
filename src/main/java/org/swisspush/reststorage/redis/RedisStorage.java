@@ -1270,22 +1270,38 @@ public class RedisStorage implements Storage {
                     log.trace("RedisStorage cleanup resources call recursive next bulk");
                     cleanupRecursiveCore(expirableSetKey, cleaned, maxdel, bulkSize, onDone, onError);
                 } else {
-                    redisAPI.zcount(expirableSetKey, "0", String.valueOf(System.currentTimeMillis()), longAsyncResult -> {
-                        if( longAsyncResult.failed() ){
-                            Throwable ex = longAsyncResult.cause();
-                            if( log.isInfoEnabled() ) log.info("stacktrace", ex);
-                            onError.accept(ex);
-                            return;
-                        }
-                        Long result = longAsyncResult.result().toLong();
-                        log.trace("RedisStorage cleanup resources zcount on expirable set: {}", result);
-                        int resToCleanLeft = 0;
-                        if (result != null && result.intValue() >= 0) {
-                            resToCleanLeft = result.intValue();
-                        }
-                        onDone.accept(cleaned, resToCleanLeft);
-                    });
+                    zcountExpired(expirableSetKey, resToCleanLeft -> onDone.accept(cleaned, resToCleanLeft), onError);
                 }
+            });
+        });
+    }
+
+    /**
+     * Counts the number of still-expired (but not yet cleaned) resources tracked by {@code expirableSetKey},
+     * e.g. to report {@code expiredResourcesLeft} without performing any actual cleanup work.
+     */
+    private void zcountExpired(final String expirableSetKey, final Consumer<Integer> onDone, final Consumer<Throwable> onError) {
+        redisProvider.redis().onComplete(ev -> {
+            if (ev.failed()) {
+                log.error("Redis: zcountExpired failed in storage {}", storageIdentifier, exceptionFactory.newException(
+                        "redisProvider.redis() failed", ev.cause()));
+                onError.accept(ev.cause());
+                return;
+            }
+            ev.result().zcount(expirableSetKey, "0", String.valueOf(System.currentTimeMillis()), longAsyncResult -> {
+                if (longAsyncResult.failed()) {
+                    Throwable ex = longAsyncResult.cause();
+                    if (log.isInfoEnabled()) log.info("stacktrace", ex);
+                    onError.accept(ex);
+                    return;
+                }
+                Long result = longAsyncResult.result().toLong();
+                log.trace("RedisStorage cleanup resources zcount on expirable set: {}", result);
+                int resToCleanLeft = 0;
+                if (result != null && result.intValue() >= 0) {
+                    resToCleanLeft = result.intValue();
+                }
+                onDone.accept(resToCleanLeft);
             });
         });
     }
@@ -1388,6 +1404,13 @@ public class RedisStorage implements Storage {
      * Runs the cleanup once per known partition tag (registered via {@link #registerPartitionTag}),
      * since a partitioned {@code expirableSet} only tracks resources belonging to one partition/slot.
      * Results are aggregated into a single {@link DocumentResource} once every partition has been processed.
+     *
+     * <p><b>Note:</b> partitions are processed strictly sequentially (not concurrently) so that
+     * {@code cleanupResourcesAmountUsed} can be enforced as a single shared budget across all partitions
+     * (see {@link #cleanupPartitionsSequentially}), rather than being applied independently per partition
+     * (which would allow up to {@code cleanupResourcesAmountUsed * numberOfPartitions} resources to be
+     * cleaned in one run). This is an accepted trade-off: a cleanup run's total duration grows with the
+     * number of registered partitions.</p>
      */
     private void cleanupAllPartitions(final Handler<DocumentResource> handler, final long cleanupResourcesAmountUsed) {
         redisProvider.redis().onComplete(ev -> {
@@ -1420,6 +1443,13 @@ public class RedisStorage implements Storage {
         });
     }
 
+    /**
+     * Processes partition tags one at a time, sharing a single {@code cleanupResourcesAmountUsed} budget
+     * across all of them: {@code totalCleaned} carries over from one partition to the next, and each
+     * partition is only allowed to clean up {@code cleanupResourcesAmountUsed - totalCleaned} additional
+     * resources. Once the shared budget is exhausted, remaining partitions are only zcounted (not cleaned)
+     * so {@code expiredResourcesLeft} in the final result stays accurate.
+     */
     private void cleanupPartitionsSequentially(final Handler<DocumentResource> handler, final List<String> tags,
                                                final int index, final long cleanupResourcesAmountUsed,
                                                final long totalCleaned, final int totalLeft) {
@@ -1439,14 +1469,48 @@ public class RedisStorage implements Storage {
         }
         String tag = tags.get(index);
         String taggedExpirableSet = expirableSet + ":{" + tag + "}";
-        cleanupRecursiveCore(taggedExpirableSet, 0, cleanupResourcesAmountUsed, CLEANUP_BULK_SIZE,
-                (cleaned, left) -> cleanupPartitionsSequentially(handler, tags, index + 1, cleanupResourcesAmountUsed,
-                        totalCleaned + cleaned, totalLeft + left),
-                ex -> {
-                    log.warn("cleanup of partition '{}' failed in storage {}, continuing with remaining partitions",
-                            tag, storageIdentifier, ex);
-                    cleanupPartitionsSequentially(handler, tags, index + 1, cleanupResourcesAmountUsed, totalCleaned, totalLeft);
-                });
+        long remainingBudget = cleanupResourcesAmountUsed - totalCleaned;
+
+        BiConsumer<Long, Integer> onPartitionDone = (cleaned, left) -> {
+            pruneEmptyPartitionTag(tag, left);
+            cleanupPartitionsSequentially(handler, tags, index + 1, cleanupResourcesAmountUsed,
+                    totalCleaned + cleaned, totalLeft + left);
+        };
+        Consumer<Throwable> onPartitionError = ex -> {
+            log.warn("cleanup of partition '{}' failed in storage {}, continuing with remaining partitions",
+                    tag, storageIdentifier, ex);
+            cleanupPartitionsSequentially(handler, tags, index + 1, cleanupResourcesAmountUsed, totalCleaned, totalLeft);
+        };
+
+        if (remainingBudget <= 0) {
+            // Shared budget already exhausted by previous partitions: don't clean this partition,
+            // just zcount it so expiredResourcesLeft in the aggregated result stays accurate.
+            zcountExpired(taggedExpirableSet, count -> onPartitionDone.accept(0L, count), onPartitionError);
+            return;
+        }
+        cleanupRecursiveCore(taggedExpirableSet, 0, remainingBudget, CLEANUP_BULK_SIZE, onPartitionDone, onPartitionError);
+    }
+
+    /**
+     * Removes a partition tag from the partition registry once its (partitioned) expirable set is fully
+     * drained ({@code expiredLeft == 0}), so {@link #cleanupAllPartitions} stops iterating over stale,
+     * empty partitions indefinitely. Safe to prune eagerly: {@link #registerPartitionTag} re-adds the tag
+     * the next time a resource is written under it. Fire-and-forget; failures are logged only.
+     */
+    private void pruneEmptyPartitionTag(String tag, int expiredLeft) {
+        if (expiredLeft != 0) {
+            return;
+        }
+        redisProvider.redis().onComplete(ev -> {
+            if (ev.failed()) {
+                return;
+            }
+            ev.result().srem(Arrays.asList(partitionRegistryKey, tag), ar -> {
+                if (ar.failed()) {
+                    log.warn("Could not prune empty partition tag '{}' from registry in storage {}", tag, storageIdentifier, ar.cause());
+                }
+            });
+        });
     }
 
     private boolean isEmpty(CharSequence cs) {

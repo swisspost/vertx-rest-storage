@@ -96,8 +96,15 @@ public final class PartitionContext {
         while (encodedPath.startsWith(PATH_SEP, leadingSeps)) {
             leadingSeps += PATH_SEP.length();
         }
+        // Locate the end of the raw first segment (as it appears in encodedPath) rather than relying
+        // on tag.length(), since derivePartitionTag() may have stripped literal '{'/'}' characters from
+        // it - using the stripped length here would compute the wrong substring offset and corrupt the path.
+        int segmentEnd = encodedPath.indexOf(PATH_SEP, leadingSeps);
+        if (segmentEnd == -1) {
+            segmentEnd = encodedPath.length();
+        }
         String taggedKey = encodedPath.substring(0, leadingSeps) + "{" + tag + "}"
-                + encodedPath.substring(leadingSeps + tag.length());
+                + encodedPath.substring(segmentEnd);
         String taggedExpirableSet = expirableSet + ":{" + tag + "}";
         return new PartitionContext(taggedKey, taggedExpirableSet, tag);
     }

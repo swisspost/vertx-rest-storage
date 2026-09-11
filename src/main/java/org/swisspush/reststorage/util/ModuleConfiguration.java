@@ -63,6 +63,7 @@ public class ModuleConfiguration {
     private String collectionsPrefix = "rest-storage:collections";
     private String deltaResourcesPrefix = "delta:resources";
     private String deltaEtagsPrefix = "delta:etags";
+    private boolean redisClusterPartitioningEnabled = false;
     private Integer resourceCleanupIntervalSec = null;
     private long resourceCleanupAmount = 100_000L;
     private String lockPrefix = "rest-storage:locks";
@@ -269,6 +270,23 @@ public class ModuleConfiguration {
 
     public ModuleConfiguration deltaEtagsPrefix(String deltaEtagsPrefix) {
         this.deltaEtagsPrefix = deltaEtagsPrefix;
+        return this;
+    }
+
+    /**
+     * Enables Redis Cluster compatible key partitioning. When enabled, every Redis storage key
+     * (resources, collections, locks, delta, expirable-set) derived from a resource path is tagged
+     * with a Redis Cluster hash tag ({@code {tag}}) built from the resource path's top-level segment.
+     * This keeps every key touched by a single Lua script (get/put/delete/storageExpand) in the same
+     * cluster slot, avoiding CROSSSLOT errors, while still distributing different top-level resource
+     * trees across different cluster nodes.
+     * <p>
+     * <b>Attention:</b> Enabling this feature changes the physical Redis key names (the top-level path
+     * segment becomes wrapped in curly braces). Existing data must be migrated before enabling this in
+     * production. Disable (default) to keep the original, non-partitioned key layout.
+     */
+    public ModuleConfiguration redisClusterPartitioningEnabled(boolean redisClusterPartitioningEnabled) {
+        this.redisClusterPartitioningEnabled = redisClusterPartitioningEnabled;
         return this;
     }
 
@@ -525,6 +543,10 @@ public class ModuleConfiguration {
 
     public String getDeltaEtagsPrefix() {
         return deltaEtagsPrefix;
+    }
+
+    public boolean isRedisClusterPartitioningEnabled() {
+        return redisClusterPartitioningEnabled;
     }
 
     public Integer getResourceCleanupIntervalSec() {

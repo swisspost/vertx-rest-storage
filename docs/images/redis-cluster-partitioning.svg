@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" font-family="Segoe UI, Arial, sans-serif">
+  <style>
+    .title { font-size: 20px; font-weight: 700; fill: #1a1a1a; }
+    .subtitle { font-size: 14px; font-weight: 600; fill: #444; }
+    .key { font-family: 'Consolas', monospace; font-size: 13px; fill: #1a1a1a; }
+    .label { font-size: 12px; fill: #555; }
+    .badge-err { fill: #ffe1e1; stroke: #d33; }
+    .badge-ok { fill: #e3f7e3; stroke: #2a8a2a; }
+    .node { fill: #eef3fb; stroke: #4472c4; stroke-width: 1.5; }
+    .box { fill: #ffffff; stroke: #999; stroke-width: 1; rx: 6; ry: 6; }
+    .arrow { stroke: #666; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#666"/>
+    </marker>
+  </defs>
+
+  <rect width="980" height="560" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="20" y="30" class="title">Redis Cluster: path-based key partitioning (redisClusterPartitioningEnabled)</text>
+
+  <!-- Left: without partitioning -->
+  <text x="20" y="65" class="subtitle">Disabled (default) — keys hash independently</text>
+  <rect x="20" y="80" width="440" height="200" class="box"/>
+  <text x="35" y="105" class="key">resources:project:server:test</text>
+  <text x="35" y="128" class="key">collections:project:server</text>
+  <text x="35" y="151" class="key">locks:project:server:test</text>
+  <text x="35" y="174" class="key">expirable</text>
+  <text x="35" y="205" class="label">One Lua script (PUT/GET/DEL) needs all 4 keys</text>
+  <text x="35" y="223" class="label">at once — each hashes to a different slot.</text>
+
+  <rect x="60" y="235" width="360" height="30" class="badge-err" rx="6" ry="6"/>
+  <text x="80" y="255" class="key" fill="#a30000">CROSSSLOT error on Redis Cluster</text>
+
+  <!-- Right: with partitioning -->
+  <text x="520" y="65" class="subtitle">Enabled — first path segment becomes a hash tag</text>
+  <rect x="520" y="80" width="440" height="200" class="box"/>
+  <text x="535" y="105" class="key">resources:<tspan fill="#c0392b" font-weight="700">{project}</tspan>:server:test</text>
+  <text x="535" y="128" class="key">collections:<tspan fill="#c0392b" font-weight="700">{project}</tspan>:server</text>
+  <text x="535" y="151" class="key">locks:<tspan fill="#c0392b" font-weight="700">{project}</tspan>:server:test</text>
+  <text x="535" y="174" class="key">expirable:<tspan fill="#c0392b" font-weight="700">{project}</tspan></text>
+  <text x="535" y="205" class="label">Redis Cluster hashes only the "{project}"</text>
+  <text x="535" y="223" class="label">substring — all 4 keys land on the same slot.</text>
+
+  <rect x="560" y="235" width="360" height="30" class="badge-ok" rx="6" ry="6"/>
+  <text x="580" y="255" class="key" fill="#1e6b1e">Same slot -&gt; atomic Lua scripts work</text>
+
+  <!-- Bottom: distribution across nodes -->
+  <text x="20" y="330" class="subtitle">Different top-level path segments still spread across the cluster</text>
+
+  <rect x="20" y="350" width="280" height="70" rx="8" ry="8" class="node"/>
+  <text x="35" y="375" class="key">{project}:...</text>
+  <text x="35" y="395" class="label">-&gt; slot 4813 -&gt; Node A</text>
+
+  <rect x="350" y="350" width="280" height="70" rx="8" ry="8" class="node"/>
+  <text x="365" y="375" class="key">{invoices}:...</text>
+  <text x="365" y="395" class="label">-&gt; slot 9102 -&gt; Node B</text>
+
+  <rect x="680" y="350" width="280" height="70" rx="8" ry="8" class="node"/>
+  <text x="695" y="375" class="key">{orders}:...</text>
+  <text x="695" y="395" class="label">-&gt; slot 1420 -&gt; Node C</text>
+
+  <text x="20" y="450" class="label">- No .lua script files are changed; only the Java code building the KEYS[1] string and the</text>
+  <text x="20" y="470" class="label">  expirableSet name adds/removes the hash tag.</text>
+  <text x="20" y="492" class="label">- Enabling this on a deployment with existing data changes physical key names, so a data</text>
+  <text x="20" y="512" class="label">  migration is required (see notes below).</text>
+</svg>

@@ -242,6 +242,25 @@
                     <!-- Sets the VM argument line used when unit tests are run. -->
                     <argLine>${surefireArgLine}</argLine>
                 </configuration>
+                <executions>
+                    <!-- default-test (from the parent/plugin default binding) runs everything once
+                         with redisClusterPartitioningEnabled=false (the ModuleConfiguration default). -->
+                    <execution>
+                        <id>integration-tests-partitioning-enabled</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <reststorage.test.redisClusterPartitioningEnabled>true</reststorage.test.redisClusterPartitioningEnabled>
+                            </systemPropertyVariables>
+                            <includes>
+                                <include>**/*IntegrationTest.java</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

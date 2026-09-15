@@ -136,9 +136,17 @@ public class RedisStorage implements Storage {
         luaPutScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
         luaScripts.put(LuaScript.PUT, luaPutScriptState);
 
+        LuaScriptState luaPutClusterScriptState = new LuaScriptState(LuaScript.PUT_CLUSTER, false);
+        luaPutClusterScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
+        luaScripts.put(LuaScript.PUT_CLUSTER, luaPutClusterScriptState);
+
         LuaScriptState luaDeleteScriptState = new LuaScriptState(LuaScript.DELETE, false);
         luaDeleteScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
         luaScripts.put(LuaScript.DELETE, luaDeleteScriptState);
+
+        LuaScriptState luaDeleteClusterScriptState = new LuaScriptState(LuaScript.DELETE_CLUSTER, false);
+        luaDeleteClusterScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
+        luaScripts.put(LuaScript.DELETE_CLUSTER, luaDeleteClusterScriptState);
 
         LuaScriptState luaCleanupScriptState = new LuaScriptState(LuaScript.CLEANUP, false);
         luaCleanupScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
@@ -300,7 +308,8 @@ public class RedisStorage implements Storage {
     }
 
     private enum LuaScript {
-        GET("get.lua"), STORAGE_EXPAND("storageExpand.lua"), PUT("put.lua"), DELETE("del.lua"), CLEANUP("cleanup.lua"),
+        GET("get.lua"), STORAGE_EXPAND("storageExpand.lua"), PUT("put.lua"), PUT_CLUSTER("put-cluster.lua"),
+        DELETE("del.lua"), DELETE_CLUSTER("del-cluster.lua"), CLEANUP("cleanup.lua"),
         CLEANUP_CLUSTER("cleanup-cluster.lua");
 
         private final String file;
@@ -353,8 +362,13 @@ public class RedisStorage implements Storage {
             // so we wrap the cleanupscript around the deletescript manually to avoid code duplication.
             // we have to comment the return, so that the cleanup script doesn't terminate
             if (LuaScript.CLEANUP.equals(luaScriptType) || LuaScript.CLEANUP_CLUSTER.equals(luaScriptType)) {
+                // CLEANUP_CLUSTER processes already-tagged resource paths (popped off a per-partition
+                // expirable set), so it must inline DELETE_CLUSTER - not the plain DELETE - to avoid the
+                // same untagged-root-key cross-slot access that DELETE_CLUSTER itself avoids (see
+                // del-cluster.lua's header comment).
+                LuaScript delScript = LuaScript.CLEANUP_CLUSTER.equals(luaScriptType) ? LuaScript.DELETE_CLUSTER : LuaScript.DELETE;
                 Map<String, String> values = new HashMap<>();
-                values.put("delscript", readLuaScriptFromClasspath(LuaScript.DELETE).replaceAll("return", "--return"));
+                values.put("delscript", readLuaScriptFromClasspath(delScript).replaceAll("return", "--return"));
                 StrSubstitutor sub = new StrSubstitutor(values, "--%(", ")");
                 this.script = sub.replace(readLuaScriptFromClasspath(luaScriptType));
             } else {
@@ -594,6 +608,12 @@ public class RedisStorage implements Storage {
     @Override
     public void get(String path, String etag, int offset, int limit, final Handler<Resource> handler) {
         PartitionContext partition = partitionContextFor(encodePath(path));
+        if (partitioningEnabled && partition.getTag() == null) {
+            // Root ("/") has no partition tag to route a single tagged GET by (see
+            // PartitionContext#forPath); scatter the listing across every known partition instead.
+            getAllPartitionsAsRootCollection(offset, limit, handler);
+            return;
+        }
         List<String> keys = Collections.singletonList(partition.getKey());
         List<String> arguments = Arrays.asList(
                 redisResourcesPrefix,
@@ -951,6 +971,7 @@ public class RedisStorage implements Storage {
     public void put(String path, String etag, boolean merge, long expire, String lockOwner, LockMode lockMode,
                     long lockExpire, boolean storeCompressed, Handler<Resource> handler) {
         final PartitionContext partition = partitionContextFor(encodePath(path));
+        final LuaScript putScript = partitioningEnabled && partition.getTag() != null ? LuaScript.PUT_CLUSTER : LuaScript.PUT;
         final DocumentResource d = new DocumentResource();
         final ByteArrayWriteStream stream = new ByteArrayWriteStream();
 
@@ -990,7 +1011,7 @@ public class RedisStorage implements Storage {
                                 lockExpireInMillis,
                                 storeCompressed ? "1" : "0"
                         );
-                        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.PUT, new Put(d, keys, arg, handler, partition.getTag()), 0);
+                        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(putScript, new Put(putScript, d, keys, arg, handler, partition.getTag()), 0);
                     } else {
                         if (log.isInfoEnabled()) log.info("stacktrace", exceptionFactory.newException(
                             "GZIPUtil.compressResource(stream.getBytes()) failed", compressResourceResult.cause()));
@@ -1013,7 +1034,7 @@ public class RedisStorage implements Storage {
                         lockExpireInMillis,
                         storeCompressed ? "1" : "0"
                 );
-                reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.PUT, new Put(d, keys, arguments, handler, partition.getTag()), 0);
+                reloadScriptIfLoglevelChangedAndExecuteRedisCommand(putScript, new Put(putScript, d, keys, arguments, handler, partition.getTag()), 0);
             }
         };
         handler.handle(d);
@@ -1026,13 +1047,15 @@ public class RedisStorage implements Storage {
      */
     private class Put implements RedisCommand {
 
+        private final LuaScript script;
         private final DocumentResource d;
         private final List<String> keys;
         private final List<String> arguments;
         private final Handler<Resource> handler;
         private final String partitionTag;
 
-        public Put(DocumentResource d, List<String> keys, List<String> arguments, Handler<Resource> handler, String partitionTag) {
+        public Put(LuaScript script, DocumentResource d, List<String> keys, List<String> arguments, Handler<Resource> handler, String partitionTag) {
+            this.script = script;
             this.d = d;
             this.keys = keys;
             this.arguments = arguments;
@@ -1041,7 +1064,7 @@ public class RedisStorage implements Storage {
         }
 
         public void exec(final int executionCounter) {
-            List<String> args = toPayload(luaScripts.get(LuaScript.PUT).getSha(), keys.size(), keys, arguments);
+            List<String> args = toPayload(luaScripts.get(script).getSha(), keys.size(), keys, arguments);
 
             redisProvider.redis().onComplete(redisEv -> {
                 if (redisEv.failed()) {
@@ -1079,7 +1102,7 @@ public class RedisStorage implements Storage {
                             if (executionCounter > 10) {
                                 log.error("amount the script in storage {} got loaded is higher than 10, we abort", storageIdentifier);
                             } else {
-                                luaScripts.get(LuaScript.PUT).loadLuaScript(new Put(d, keys, arguments, handler, partitionTag), executionCounter);
+                                luaScripts.get(script).loadLuaScript(new Put(script, d, keys, arguments, handler, partitionTag), executionCounter);
                             }
                         } else if ( d.errorHandler != null ) {
                             if (log.isDebugEnabled()) log.debug("PUT request failed",
@@ -1098,6 +1121,13 @@ public class RedisStorage implements Storage {
     public void delete(String path, String lockOwner, LockMode lockMode, long lockExpire, boolean confirmCollectionDelete,
                        boolean deleteRecursive, final Handler<Resource> handler) {
         PartitionContext partition = partitionContextFor(encodePath(path));
+        if (partitioningEnabled && partition.getTag() == null) {
+            // Root ("/") has no partition tag to route a single tagged DELETE by (see
+            // PartitionContext#forPath); scatter the recursive delete across every known partition instead.
+            deleteAllPartitions(lockOwner, lockMode, lockExpire, confirmCollectionDelete, deleteRecursive, handler);
+            return;
+        }
+        LuaScript deleteScript = partitioningEnabled ? LuaScript.DELETE_CLUSTER : LuaScript.DELETE;
         List<String> keys = Collections.singletonList(partition.getKey());
 
         String lockExpireInMillis = String.valueOf(System.currentTimeMillis() + (lockExpire * 1000));
@@ -1117,7 +1147,213 @@ public class RedisStorage implements Storage {
                 lockMode.text(),
                 lockExpireInMillis
         );
-        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.DELETE, new Delete(keys, arguments, handler), 0);
+        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(deleteScript, new Delete(deleteScript, keys, arguments, handler), 0);
+    }
+
+    /**
+     * Handles a recursive DELETE targeting the root path ("/") when Redis Cluster partitioning is enabled.
+     * Root has no partition tag (see {@link PartitionContext#forPath}), so there is no single tagged key
+     * to route a DELETE by; instead this scatters the deletion across every partition tag ever registered
+     * in {@link #partitionRegistryKey} (the same registry {@link #cleanupAllPartitions} uses) and gathers
+     * the results into a single outcome, mirroring a plain (non-partitioned) DELETE's return semantics.
+     * Partitions whose data is fully deleted (or was already gone) are pruned from the registry as they
+     * are processed.
+     */
+    private void deleteAllPartitions(final String lockOwner, final LockMode lockMode, final long lockExpire,
+                                     final boolean confirmCollectionDelete, final boolean deleteRecursive,
+                                     final Handler<Resource> handler) {
+        redisProvider.redis().onComplete(ev -> {
+            if (ev.failed()) {
+                log.error("Redis: deleteAllPartitions failed in storage {}", storageIdentifier,
+                        exceptionFactory.newException("redisProvider.redis() failed", ev.cause()));
+                error(handler, redisProviderFailMsg);
+                return;
+            }
+            var redisAPI = ev.result();
+            redisAPI.smembers(partitionRegistryKey, membersEv -> {
+                if (membersEv.failed()) {
+                    log.error("Redis: could not read partition registry '{}' in storage {}", partitionRegistryKey,
+                            storageIdentifier, exceptionFactory.newException("redisAPI.smembers() failed", membersEv.cause()));
+                    error(handler, "redisAPI.smembers() failed");
+                    return;
+                }
+                List<String> tags = new ArrayList<>();
+                if (membersEv.result() != null) {
+                    membersEv.result().forEach(response -> tags.add(response.toString()));
+                }
+                if (tags.isEmpty()) {
+                    notFound(handler);
+                    return;
+                }
+                deletePartitionsSequentially(redisAPI, tags, 0, lockOwner, lockMode, lockExpire,
+                        confirmCollectionDelete, deleteRecursive, false, null, handler);
+            });
+        });
+    }
+
+    /**
+     * Processes partition tags one at a time for a root DELETE (see {@link #deleteAllPartitions}).
+     * {@code anyDeleted} tracks whether at least one partition actually had something deleted, so that
+     * a root DELETE where every known partition turns out to already be empty still reports "not found"
+     * like a plain DELETE of a non-existent resource would. {@code pendingResult} carries the first
+     * "interesting" (lock-rejected / notEmpty) outcome across partitions so it is not masked by later,
+     * unrelated partitions succeeding.
+     */
+    private void deletePartitionsSequentially(final RedisAPI redisAPI, final List<String> tags, final int index,
+                                              final String lockOwner, final LockMode lockMode, final long lockExpire,
+                                              final boolean confirmCollectionDelete, final boolean deleteRecursive,
+                                              final boolean anyDeleted, final Resource pendingResult,
+                                              final Handler<Resource> handler) {
+        if (index >= tags.size()) {
+            if (pendingResult != null) {
+                handler.handle(pendingResult);
+            } else if (anyDeleted) {
+                handler.handle(new Resource());
+            } else {
+                notFound(handler);
+            }
+            return;
+        }
+        String tag = tags.get(index);
+        String taggedKey = ":{" + tag + "}";
+        List<String> keys = Collections.singletonList(taggedKey);
+        String lockExpireInMillis = String.valueOf(System.currentTimeMillis() + (lockExpire * 1000));
+        List<String> arguments = Arrays.asList(
+                redisResourcesPrefix,
+                redisCollectionsPrefix,
+                redisDeltaResourcesPrefix,
+                redisDeltaEtagsPrefix,
+                expirableSet + ":{" + tag + "}",
+                String.valueOf(System.currentTimeMillis()),
+                MAX_EXPIRE_IN_MILLIS,
+                confirmCollectionDelete ? "true" : "false",
+                deleteRecursive ? "true" : "false",
+                redisLockPrefix,
+                lockOwner,
+                lockMode.text(),
+                lockExpireInMillis
+        );
+        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.DELETE_CLUSTER,
+                new Delete(LuaScript.DELETE_CLUSTER, keys, arguments, result -> {
+                    boolean interesting = result.rejected || result.error;
+                    Resource nextPending = pendingResult;
+                    boolean nextAnyDeleted = anyDeleted;
+                    if (interesting) {
+                        if (nextPending == null) {
+                            nextPending = result;
+                        }
+                    } else {
+                        if (result.exists) {
+                            // "deleted" (as opposed to "notFound", which leaves result.exists == false)
+                            nextAnyDeleted = true;
+                        }
+                        // Nothing (interesting) left for this tag: prune it from the registry so future
+                        // root listings/deletes/cleanups stop iterating over it.
+                        redisAPI.srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
+                            if (sremEv.failed()) {
+                                log.warn("Could not remove partition tag '{}' from registry in storage {}",
+                                        tag, storageIdentifier, sremEv.cause());
+                            }
+                        });
+                    }
+                    deletePartitionsSequentially(redisAPI, tags, index + 1, lockOwner, lockMode, lockExpire,
+                            confirmCollectionDelete, deleteRecursive, nextAnyDeleted, nextPending, handler);
+                }), 0);
+    }
+
+    /**
+     * Handles a GET targeting the root path ("/") when Redis Cluster partitioning is enabled. Root has no
+     * partition tag (see {@link PartitionContext#forPath}), so - unlike every other GET - it cannot be
+     * answered by a single tagged {@code get.lua} call: get.lua would need to read the single, global,
+     * untagged {@code collectionsPrefix} root key, which is never populated in cluster mode (see
+     * put-cluster.lua/del-cluster.lua) since writing to it would itself be a cross-slot access.
+     * Instead, this lists every partition tag known to {@link #partitionRegistryKey} (the same registry
+     * {@link #cleanupAllPartitions} uses) and, for each, checks with a plain (single-key, cluster-safe)
+     * EXISTS whether it is itself a resource or a collection, assembling the aggregated result exactly
+     * like get.lua would for a "TYPE_COLLECTION" listing.
+     */
+    private void getAllPartitionsAsRootCollection(final int offset, final int limit, final Handler<Resource> handler) {
+        redisProvider.redis().onComplete(ev -> {
+            if (ev.failed()) {
+                log.error("Redis: getAllPartitionsAsRootCollection failed in storage {}", storageIdentifier,
+                        exceptionFactory.newException("redisProvider.redis() failed", ev.cause()));
+                error(handler, redisProviderFailMsg);
+                return;
+            }
+            var redisAPI = ev.result();
+            redisAPI.smembers(partitionRegistryKey, membersEv -> {
+                if (membersEv.failed()) {
+                    log.error("Redis: could not read partition registry '{}' in storage {}", partitionRegistryKey,
+                            storageIdentifier, exceptionFactory.newException("redisAPI.smembers() failed", membersEv.cause()));
+                    error(handler, "redisAPI.smembers() failed");
+                    return;
+                }
+                List<String> tags = new ArrayList<>();
+                if (membersEv.result() != null) {
+                    membersEv.result().forEach(response -> tags.add(response.toString()));
+                }
+                if (tags.isEmpty()) {
+                    notFound(handler);
+                    return;
+                }
+                resolveRootChildrenSequentially(redisAPI, tags, 0, new ArrayList<>(), items -> {
+                    if (items.isEmpty()) {
+                        notFound(handler);
+                        return;
+                    }
+                    Collections.sort(items);
+                    List<Resource> page = items;
+                    if (offset > -1 && limit > -1) {
+                        int from = Math.min(offset, page.size());
+                        int to = Math.min(from + limit, page.size());
+                        page = page.subList(from, to);
+                    }
+                    CollectionResource r = new CollectionResource();
+                    r.items = new ArrayList<>(page);
+                    handler.handle(r);
+                });
+            });
+        });
+    }
+
+    /**
+     * Resolves, for each registered partition tag, whether it is currently a resource or a collection
+     * (or - for a stale/already fully-deleted tag - neither, in which case it is silently omitted from
+     * the listing), using only single-key EXISTS checks so no cross-slot access ever occurs.
+     */
+    private void resolveRootChildrenSequentially(final RedisAPI redisAPI, final List<String> tags, final int index,
+                                                 final List<Resource> acc, final Consumer<List<Resource>> onDone) {
+        if (index >= tags.size()) {
+            onDone.accept(acc);
+            return;
+        }
+        String tag = tags.get(index);
+        String taggedKey = ":{" + tag + "}";
+        redisAPI.exists(Collections.singletonList(redisResourcesPrefix + taggedKey), resourceExistsEv -> {
+            if (isExists(resourceExistsEv)) {
+                DocumentResource d = new DocumentResource();
+                d.name = tag;
+                acc.add(d);
+                resolveRootChildrenSequentially(redisAPI, tags, index + 1, acc, onDone);
+                return;
+            }
+            redisAPI.exists(Collections.singletonList(redisCollectionsPrefix + taggedKey), collectionExistsEv -> {
+                if (isExists(collectionExistsEv)) {
+                    CollectionResource c = new CollectionResource();
+                    c.name = tag;
+                    acc.add(c);
+                }
+                resolveRootChildrenSequentially(redisAPI, tags, index + 1, acc, onDone);
+            });
+        });
+    }
+
+    private boolean isExists(AsyncResult<Response> existsEv) {
+        if (existsEv.failed() || existsEv.result() == null) {
+            return false;
+        }
+        Long count = existsEv.result().toLong();
+        return count != null && count == 1L;
     }
 
     /**
@@ -1127,18 +1363,20 @@ public class RedisStorage implements Storage {
      */
     private class Delete implements RedisCommand {
 
+        private final LuaScript script;
         private final List<String> keys;
         private final List<String> arguments;
         private final Handler<Resource> handler;
 
-        public Delete(List<String> keys, List<String> arguments, final Handler<Resource> handler) {
+        public Delete(LuaScript script, List<String> keys, List<String> arguments, final Handler<Resource> handler) {
+            this.script = script;
             this.keys = keys;
             this.arguments = arguments;
             this.handler = handler;
         }
 
         public void exec(final int executionCounter) {
-            List<String> args = toPayload(luaScripts.get(LuaScript.DELETE).getSha(), keys.size(), keys, arguments);
+            List<String> args = toPayload(luaScripts.get(script).getSha(), keys.size(), keys, arguments);
 
             redisProvider.redis().onComplete( ev -> {
                 if (ev.failed()) {
@@ -1157,7 +1395,7 @@ public class RedisStorage implements Storage {
                             if (executionCounter > 10) {
                                 log.error("amount the script in storage {} got loaded is higher than 10, we abort", storageIdentifier);
                             } else {
-                                luaScripts.get(LuaScript.DELETE).loadLuaScript(new Delete(keys, arguments, handler), executionCounter);
+                                luaScripts.get(script).loadLuaScript(new Delete(script, keys, arguments, handler), executionCounter);
                             }
                             return;
                         }

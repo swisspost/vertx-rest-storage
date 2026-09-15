@@ -462,4 +462,119 @@ public class RedisStoragePartitioningTest {
             d.readStream.handler(buf::appendBuffer);
         }, "100");
     }
+
+    // ------------------------------------------------------------------
+    // root ("/") GET/DELETE scatter-gather when partitioning is enabled
+    // ------------------------------------------------------------------
+
+    @Test
+    public void getRootScattersAcrossRegisteredPartitionsWhenEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EXISTS) {
+                String key = inv.args.get(0);
+                if ("rest-storage:resources:{project}".equals(key)) {
+                    return number(1);
+                }
+                if ("rest-storage:collections:{invoices}".equals(key)) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/", null, 0, -1, resource -> {
+            // root GET must never invoke the tagged get.lua script (there is no single tag to route by)
+            context.assertTrue(api.byCommand(Command.EVALSHA).isEmpty());
+            context.assertEquals(1, api.byCommand(Command.SMEMBERS).size());
+
+            context.assertTrue(resource instanceof org.swisspush.reststorage.CollectionResource);
+            List<Resource> items = ((org.swisspush.reststorage.CollectionResource) resource).items;
+            context.assertEquals(2, items.size());
+            for (Resource item : items) {
+                if ("project".equals(item.name)) {
+                    context.assertTrue(item instanceof DocumentResource);
+                } else if ("invoices".equals(item.name)) {
+                    context.assertTrue(item instanceof org.swisspush.reststorage.CollectionResource);
+                } else {
+                    context.fail("unexpected item: " + item.name);
+                }
+            }
+            async.complete();
+        });
+    }
+
+    @Test
+    public void getRootReturnsNotFoundWhenNoPartitionsRegistered(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse();
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/", null, 0, -1, resource -> {
+            context.assertFalse(resource.exists);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootScattersAcrossRegisteredPartitionsAndPrunesRegistryWhenEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                return bulk("deleted");
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertFalse(resource.error);
+            context.assertFalse(resource.rejected);
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(2, evalshaCalls.size());
+            for (Invocation invocation : evalshaCalls) {
+                context.assertTrue(
+                        ":{project}".equals(invocation.args.get(2)) || ":{invoices}".equals(invocation.args.get(2)));
+            }
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(2, sremCalls.size());
+            for (Invocation invocation : sremCalls) {
+                context.assertEquals("rest-storage:locks-partitions", invocation.args.get(0));
+            }
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootReturnsNotFoundWhenNoPartitionsRegistered(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse();
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertFalse(resource.exists);
+            async.complete();
+        });
+    }
 }

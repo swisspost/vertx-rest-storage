@@ -13,12 +13,25 @@ import org.swisspush.reststorage.ConfigurableTestCase;
 import org.swisspush.reststorage.JedisFactory;
 import org.swisspush.reststorage.RestStorageMod;
 import org.swisspush.reststorage.util.ModuleConfiguration;
+import org.swisspush.reststorage.util.ResourceNameUtil;
 import redis.clients.jedis.Jedis;
+
+import java.util.Set;
 
 @RunWith(VertxUnitRunner.class)
 public abstract class RedisStorageIntegrationTestCase extends ConfigurableTestCase {
 
     Jedis jedis = null;
+
+    /**
+     * Allows the whole integration test suite to be run twice - once with Redis Cluster
+     * path-based partitioning disabled (default) and once with it enabled - via
+     * {@code -Dreststorage.test.redisClusterPartitioningEnabled=true}. All key-name assumptions in
+     * these tests must therefore go through {@link #resourceKey(String)} / {@link #assertExpirableSetCount}
+     * instead of hardcoding raw Redis key names, since the exact key name depends on this flag.
+     */
+    protected static final boolean PARTITIONING_ENABLED =
+            Boolean.parseBoolean(System.getProperty("reststorage.test.redisClusterPartitioningEnabled", "false"));
 
     @Before
     public void setUp(TestContext context) {
@@ -35,6 +48,7 @@ public abstract class RedisStorageIntegrationTestCase extends ConfigurableTestCa
                 .storageType(ModuleConfiguration.StorageType.redis)
                 .confirmCollectionDelete(true)
                 .maxStorageExpandSubresources(5)
+                .redisClusterPartitioningEnabled(PARTITIONING_ENABLED)
                 .storageAddress("rest-storage");
 
         updateModuleConfiguration(modConfig);
@@ -60,6 +74,28 @@ public abstract class RedisStorageIntegrationTestCase extends ConfigurableTestCa
     }
 
     protected void assertExpirableSetCount(TestContext testContext, Long count){
-        testContext.assertEquals(count, jedis.zcount("rest-storage:expirable", 0d, Double.MAX_VALUE));
+        // With partitioning enabled, the (single, global) "rest-storage:expirable" set is replaced by
+        // one "rest-storage:expirable:{tag}" set per partition, so sum the count across every matching key.
+        long total = 0L;
+        Set<String> keys = jedis.keys("rest-storage:expirable*");
+        for (String key : keys) {
+            total += jedis.zcount(key, 0d, Double.MAX_VALUE);
+        }
+        testContext.assertEquals(count, total);
+    }
+
+    /**
+     * Builds the exact Redis key ({@code rest-storage:resources<encodedPath>}, tagged when
+     * partitioning is enabled) that {@code RedisStorage} uses to store the resource at {@code path}.
+     * Use this instead of hardcoding raw Redis key names in tests, since the key layout depends on
+     * {@link #PARTITIONING_ENABLED}.
+     */
+    protected String resourceKey(String path) {
+        String encodedPath = ResourceNameUtil.replaceColonsAndSemiColons(path).replace("/", ":");
+        if (!encodedPath.startsWith(":")) {
+            encodedPath = ":" + encodedPath;
+        }
+        PartitionContext ctx = PartitionContext.forPath(encodedPath, PARTITIONING_ENABLED, "rest-storage:expirable");
+        return "rest-storage:resources" + ctx.getKey();
     }
 }

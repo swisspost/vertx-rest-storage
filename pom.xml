@@ -242,6 +242,32 @@
                     <!-- Sets the VM argument line used when unit tests are run. -->
                     <argLine>${surefireArgLine}</argLine>
                 </configuration>
+                <executions>
+                    <!-- default-test (from the parent/plugin default binding) runs everything once
+                         with redisClusterPartitioningEnabled=false (the ModuleConfiguration default). -->
+                    <execution>
+                        <!-- NOTE: this only re-runs the existing standalone-Redis integration suite with
+                             redisClusterPartitioningEnabled=true. It exercises the key-tagging/routing-key
+                             construction logic (PartitionContext, registerPartitionTag, cleanup-per-partition),
+                             but redisClientType stays STANDALONE and only one Redis node is used - it does
+                             NOT exercise real Redis Cluster command routing/slot enforcement. Do not treat a
+                             green run here as verification of actual Redis Cluster support; see the
+                             "redis-cluster-integration-tests" profile below for that. -->
+                        <id>standalone-redis-partitioning-key-layout-tests</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <reststorage.test.redisClusterPartitioningEnabled>true</reststorage.test.redisClusterPartitioningEnabled>
+                            </systemPropertyVariables>
+                            <includes>
+                                <include>**/*IntegrationTest.java</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

@@ -264,8 +264,14 @@ path in a [Redis Cluster hash tag](https://redis.io/docs/latest/operations/clust
 `/project/server/test` produces the key `:{project}:server:test` instead of `:project:server:test`). Because Redis
 Cluster only uses the substring inside the first `{}` for slot hashing, every key derived from the same top-level
 path segment (resources, collections, locks, and its portion of the expirable set) is routed to the same slot,
-making the existing Lua scripts cluster-safe **without any changes to the `.lua` files themselves**. Different
+making `get`, `put` and `del` cluster-safe **without any changes to those `.lua` files themselves**. Different
 top-level path segments naturally land on different slots/nodes, so data is still distributed across the cluster.
+
+The periodic `cleanup` job is the one exception: it needs to declare the (per-partition, hash-tagged) expirable set
+as a Redis Cluster key so the command is routed to the node owning that slot. To keep this cluster-only concern out
+of the plain `cleanup.lua` used for non-cluster/Sentinel deployments, a dedicated `cleanup-cluster.lua` (identical
+logic, cluster-routing aware) is used instead whenever `redisClusterPartitioningEnabled` is `true`; `cleanup.lua`
+itself is never changed by enabling this flag.
 
 Notes:
 * This flag is **disabled by default** to keep existing single-node/Sentinel deployments unaffected.
@@ -273,7 +279,8 @@ Notes:
   existing data written before enabling this flag will not be found afterwards. Plan a migration (e.g. re-write
   existing keys, or start with a fresh keyspace) before switching this on for a deployment with existing data.
 * When enabled, the periodic `cleanup` job iterates over every partition (top-level path segment) that has ever
-  received a successful `PUT`, instead of scanning a single global expirable set, and aggregates the results.
+  received a successful `PUT`, instead of scanning a single global expirable set, and aggregates the results,
+  using `cleanup-cluster.lua` (see above) for each partition.
 * This setting is only relevant when running against Redis Cluster. It is safe, but unnecessary, to enable
   against a single-node Redis or Sentinel setup.
 

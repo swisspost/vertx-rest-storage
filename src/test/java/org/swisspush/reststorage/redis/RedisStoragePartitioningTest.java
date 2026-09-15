@@ -416,6 +416,17 @@ public class RedisStoragePartitioningTest {
             List<Invocation> zcountCalls = api.byCommand(Command.ZCOUNT);
             context.assertEquals(2, zcountCalls.size());
 
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(2, evalshaCalls.size());
+            for (Invocation invocation : evalshaCalls) {
+                List<String> args = invocation.args;
+                context.assertEquals("1", args.get(1));
+                context.assertTrue(
+                        "rest-storage:expirable:{project}".equals(args.get(2))
+                                || "rest-storage:expirable:{invoices}".equals(args.get(2))
+                );
+            }
+
             DocumentResource d = resource;
             Buffer buf = Buffer.buffer();
             d.readStream.endHandler(nothing -> {

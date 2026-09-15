@@ -144,6 +144,10 @@ public class RedisStorage implements Storage {
         luaCleanupScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
         luaScripts.put(LuaScript.CLEANUP, luaCleanupScriptState);
 
+        LuaScriptState luaCleanupClusterScriptState = new LuaScriptState(LuaScript.CLEANUP_CLUSTER, false);
+        luaCleanupClusterScriptState.loadLuaScript(new RedisCommandDoNothing(), 0);
+        luaScripts.put(LuaScript.CLEANUP_CLUSTER, luaCleanupClusterScriptState);
+
         if (config.isRejectStorageWriteOnLowMemory()) {
             calculateCurrentMemoryUsage().onComplete(optionalAsyncResult -> currentMemoryUsageOptional = optionalAsyncResult.result());
             startPeriodicMemoryUsageUpdate(config.getFreeMemoryCheckIntervalMs());
@@ -296,7 +300,8 @@ public class RedisStorage implements Storage {
     }
 
     private enum LuaScript {
-        GET("get.lua"), STORAGE_EXPAND("storageExpand.lua"), PUT("put.lua"), DELETE("del.lua"), CLEANUP("cleanup.lua");
+        GET("get.lua"), STORAGE_EXPAND("storageExpand.lua"), PUT("put.lua"), DELETE("del.lua"), CLEANUP("cleanup.lua"),
+        CLEANUP_CLUSTER("cleanup-cluster.lua");
 
         private final String file;
 
@@ -347,11 +352,11 @@ public class RedisStorage implements Storage {
             // It is not possible to evalsha or eval inside lua scripts,
             // so we wrap the cleanupscript around the deletescript manually to avoid code duplication.
             // we have to comment the return, so that the cleanup script doesn't terminate
-            if (LuaScript.CLEANUP.equals(luaScriptType)) {
+            if (LuaScript.CLEANUP.equals(luaScriptType) || LuaScript.CLEANUP_CLUSTER.equals(luaScriptType)) {
                 Map<String, String> values = new HashMap<>();
                 values.put("delscript", readLuaScriptFromClasspath(LuaScript.DELETE).replaceAll("return", "--return"));
                 StrSubstitutor sub = new StrSubstitutor(values, "--%(", ")");
-                this.script = sub.replace(readLuaScriptFromClasspath(LuaScript.CLEANUP));
+                this.script = sub.replace(readLuaScriptFromClasspath(luaScriptType));
             } else {
                 this.script = readLuaScriptFromClasspath(luaScriptType);
             }
@@ -1197,7 +1202,7 @@ public class RedisStorage implements Storage {
 
     private void cleanupRecursive(final Handler<DocumentResource> handler, final long cleanedLastRun, final long maxdel,
                                   final int bulkSize, final String expirableSetKey) {
-        cleanupRecursiveCore(expirableSetKey, cleanedLastRun, maxdel, bulkSize,
+        cleanupRecursiveCore(LuaScript.CLEANUP, expirableSetKey, cleanedLastRun, maxdel, bulkSize,
                 (cleaned, resToCleanLeft) -> {
                     JsonObject retObj = new JsonObject();
                     retObj.put("cleanedResources", cleaned);
@@ -1221,13 +1226,21 @@ public class RedisStorage implements Storage {
 
     /**
      * Core cleanup loop working against a single (optionally partition-tagged) expirable-set key.
+     * {@code luaScript} selects which compiled cleanup script to invoke: {@link LuaScript#CLEANUP} for the
+     * plain (non-cluster) key layout, or {@link LuaScript#CLEANUP_CLUSTER} when operating on a hash-tagged,
+     * per-partition expirable set (Redis Cluster mode).
      * Invokes {@code onDone} with (cleanedResources, expiredResourcesLeft) on success, or {@code onError}
      * on failure. On a transient NOSCRIPT condition, the script is reloaded and neither callback is invoked
      * for this cycle (mirrors the original behaviour: the next periodic cleanup invocation will retry).
      */
-    private void cleanupRecursiveCore(final String expirableSetKey, final long cleanedLastRun, final long maxdel,
+    private void cleanupRecursiveCore(final LuaScript luaScript, final String expirableSetKey, final long cleanedLastRun, final long maxdel,
                                       final int bulkSize, final BiConsumer<Long, Integer> onDone,
                                       final Consumer<Throwable> onError) {
+        // Only the CLEANUP_CLUSTER script reads the expirable set via KEYS[1] (needed so Redis Cluster can
+        // route the command to the node owning that slot); the plain CLEANUP script still reads it from
+        // ARGV[5] as before and must keep declaring zero keys, matching its original (pre-cluster) behaviour.
+        boolean declareKey = LuaScript.CLEANUP_CLUSTER.equals(luaScript);
+        List<String> keys = declareKey ? Collections.singletonList(expirableSetKey) : Collections.emptyList();
         List<String> arguments = Arrays.asList(
                 redisResourcesPrefix,
                 redisCollectionsPrefix,
@@ -1241,7 +1254,7 @@ public class RedisStorage implements Storage {
                 String.valueOf(System.currentTimeMillis()),
                 String.valueOf(bulkSize)
         );
-        List<String> args = toPayload(luaScripts.get(LuaScript.CLEANUP).getSha(), 0, Collections.emptyList(), arguments);
+        List<String> args = toPayload(luaScripts.get(luaScript).getSha(), keys.size(), keys, arguments);
 
         redisProvider.redis().onComplete(ev -> {
             if (ev.failed()) {
@@ -1256,7 +1269,7 @@ public class RedisStorage implements Storage {
                     Throwable ex = event.cause();
                     if (ex.getMessage().startsWith("NOSCRIPT")) {
                         log.warn("the cleanup script in storage {} is not loaded. Load it and exit. The Cleanup will success the next time", storageIdentifier, ex);
-                        luaScripts.get(LuaScript.CLEANUP).loadLuaScript(new RedisCommandDoNothing(), 0);
+                        luaScripts.get(luaScript).loadLuaScript(new RedisCommandDoNothing(), 0);
                     }else {
                         if (log.isInfoEnabled()) log.info("stacktrace", exceptionFactory.newException("redisApi.evalsha() failed", ex));
                         onError.accept(ex);
@@ -1272,7 +1285,7 @@ public class RedisStorage implements Storage {
                 final long cleaned = cleanedLastRun + cleanedThisRun;
                 if (cleanedThisRun != 0 && cleaned < maxdel) {
                     log.trace("RedisStorage cleanup resources call recursive next bulk");
-                    cleanupRecursiveCore(expirableSetKey, cleaned, maxdel, bulkSize, onDone, onError);
+                    cleanupRecursiveCore(luaScript, expirableSetKey, cleaned, maxdel, bulkSize, onDone, onError);
                 } else {
                     zcountExpired(expirableSetKey, resToCleanLeft -> onDone.accept(cleaned, resToCleanLeft), onError);
                 }
@@ -1475,11 +1488,9 @@ public class RedisStorage implements Storage {
         String taggedExpirableSet = expirableSet + ":{" + tag + "}";
         long remainingBudget = cleanupResourcesAmountUsed - totalCleaned;
 
-        BiConsumer<Long, Integer> onPartitionDone = (cleaned, left) -> {
-            pruneEmptyPartitionTag(tag, left);
-            cleanupPartitionsSequentially(handler, tags, index + 1, cleanupResourcesAmountUsed,
-                    totalCleaned + cleaned, totalLeft + left);
-        };
+        BiConsumer<Long, Integer> onPartitionDone = (cleaned, left) ->
+                cleanupPartitionsSequentially(handler, tags, index + 1, cleanupResourcesAmountUsed,
+                        totalCleaned + cleaned, totalLeft + left);
         Consumer<Throwable> onPartitionError = ex -> {
             log.warn("cleanup of partition '{}' failed in storage {}, continuing with remaining partitions",
                     tag, storageIdentifier, ex);
@@ -1492,29 +1503,7 @@ public class RedisStorage implements Storage {
             zcountExpired(taggedExpirableSet, count -> onPartitionDone.accept(0L, count), onPartitionError);
             return;
         }
-        cleanupRecursiveCore(taggedExpirableSet, 0, remainingBudget, CLEANUP_BULK_SIZE, onPartitionDone, onPartitionError);
-    }
-
-    /**
-     * Removes a partition tag from the partition registry once its (partitioned) expirable set is fully
-     * drained ({@code expiredLeft == 0}), so {@link #cleanupAllPartitions} stops iterating over stale,
-     * empty partitions indefinitely. Safe to prune eagerly: {@link #registerPartitionTag} re-adds the tag
-     * the next time a resource is written under it. Fire-and-forget; failures are logged only.
-     */
-    private void pruneEmptyPartitionTag(String tag, int expiredLeft) {
-        if (expiredLeft != 0) {
-            return;
-        }
-        redisProvider.redis().onComplete(ev -> {
-            if (ev.failed()) {
-                return;
-            }
-            ev.result().srem(Arrays.asList(partitionRegistryKey, tag), ar -> {
-                if (ar.failed()) {
-                    log.warn("Could not prune empty partition tag '{}' from registry in storage {}", tag, storageIdentifier, ar.cause());
-                }
-            });
-        });
+        cleanupRecursiveCore(LuaScript.CLEANUP_CLUSTER, taggedExpirableSet, 0, remainingBudget, CLEANUP_BULK_SIZE, onPartitionDone, onPartitionError);
     }
 
     private boolean isEmpty(CharSequence cs) {

@@ -80,6 +80,20 @@ public final class PartitionContext {
      * When {@code partitioningEnabled} is {@code false}, the key and expirable-set name are returned
      * unchanged, preserving the original (non-cluster-safe) key layout for full backward compatibility.
      *
+     * <p><b>Root path stays untagged, on purpose:</b> {@code put.lua}/{@code del.lua} register every
+     * top-level path segment (e.g. the {@code {project}} hash tag itself) as a member of the single,
+     * global, untagged {@code collectionsPrefix} key (no path suffix at all) - that registration falls
+     * out of their generic "split KEYS[1] on ':' and walk ancestors" logic, which always yields an empty
+     * first path segment because {@code KEYS[1]} always starts with a leading separator. Giving the root
+     * path its own reserved hash tag here (so {@code KEYS[1]} for an explicit {@code GET}/{@code DELETE}
+     * on {@code /} becomes e.g. {@code :{root}}) would make root operations look up a key that is
+     * different from - and never populated by - that shared registration, breaking root listing/delete
+     * (confirmed by the existing root-path CRUD integration tests). Correctly closing this gap requires
+     * reworking how the root listing is assembled (effectively a scatter/gather across every registered
+     * partition tag, similar to {@link RedisStorage#cleanup}), not just this method; until that is done,
+     * root keeps the pre-partitioning (untagged) layout, and remains subject to the Cluster-routing
+     * caveat described on {@link #getTag()}.</p>
+     *
      * @param encodedPath        the already-encoded resource path (e.g. {@code :project:server:test})
      * @param partitioningEnabled whether Redis Cluster path-based partitioning is enabled
      * @param expirableSet       the (untagged, global) expirable-set key configured for this storage

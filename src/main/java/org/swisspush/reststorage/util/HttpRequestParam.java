@@ -11,6 +11,7 @@ public enum HttpRequestParam {
 
     RECURSIVE_PARAMETER("recursive"),
     STORAGE_EXPAND_PARAMETER("storageExpand"),
+    LIST_ONLY_PARAMETER("listOnly"),
     LIMIT_PARAMETER("limit"),
     OFFSET_PARAMETER("offset");
 

@@ -168,6 +168,29 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
     }
 
     @Test
+    public void testListOnlyReturnsDocumentPathsWithoutBodies(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"stuff-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff");
+        with().body("{ \"big\": \"a-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a");
+        with().body("{ \"big\": \"b-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b");
+
+        given()
+                .when()
+                .post("/server/resources/data/myService/vehicles?storageExpand=true&ListOnly=true")
+                .then()
+                .assertThat().statusCode(200).contentType(ContentType.JSON)
+                .body("paths", containsInAnyOrder(
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
+                .body("paths", everyItem(not(containsString("body"))));
+
+        async.complete();
+    }
+
+    @Test
     public void testDoubleSlashesHandlingForPOSTRequests(TestContext context) {
         Async async = context.async();
         delete("/server/resources");

@@ -21,6 +21,7 @@ import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -105,6 +106,89 @@ public class RedisStorageTest {
 
             verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
             testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListWithRedisErrorCallsHandler(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisProvider.redis()).thenReturn(Future.failedFuture("Booooom"));
+
+        storage.list("/some/path", event -> {
+            String msg = "redisProvider.redis() failed";
+            testContext.assertTrue(event.error);
+            testContext.assertEquals(msg, event.errorMessage);
+            testContext.assertEquals(Collections.emptyList(), event.paths);
+
+            ArgumentCaptor<Throwable> throwableArgument = ArgumentCaptor.forClass(Throwable.class);
+
+            verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
+            testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListReturnsPathsWithoutLoadingResourceBodies(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:some:path:b:c",
+                            "rest-storage:resources:some:path:a");
+                }
+            });
+            return null;
+        });
+        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
+            return null;
+        });
+
+        storage.list("/some/path", event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertTrue(event.exists);
+            testContext.assertEquals(Arrays.asList("/some/path/a", "/some/path/b/c"), event.paths);
+            verify(redisAPI, never()).hmget(anyList(), any(Handler.class));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListReturnsNestedFileNamesAsDocumentPaths(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:data:myService:vehicles:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-1:components:component-1:stuff",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-1:components:component-1:more:more-1:a",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-1:components:component-1:more:more-1:b",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-2:components:component-2:more:more-2:a");
+                }
+            });
+            return null;
+        });
+        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
+            return null;
+        });
+
+        storage.list("/data/myService/vehicles", event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList(
+                    "/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
+                    "/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b",
+                    "/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                    "/data/myService/vehicles/vehicle-2/components/component-2/more/more-2/a"), event.paths);
+            verify(redisAPI, never()).hmget(anyList(), any(Handler.class));
             async.complete();
         });
     }
@@ -620,5 +704,16 @@ public class RedisStorageTest {
         public boolean failed() {
             return true;
         }
+    }
+
+    private static Response scanResponse(String cursor, String... keys) {
+        MultiType keyResponse = MultiType.create(keys.length, false);
+        for (String key : keys) {
+            keyResponse.add(SimpleStringType.create(key));
+        }
+        MultiType response = MultiType.create(2, false);
+        response.add(SimpleStringType.create(cursor));
+        response.add(keyResponse);
+        return response;
     }
 }

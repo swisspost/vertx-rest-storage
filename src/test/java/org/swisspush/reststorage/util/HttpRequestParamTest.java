@@ -44,6 +44,10 @@ public class HttpRequestParamTest {
         context.assertTrue(HttpRequestParam.containsParam(params, STORAGE_EXPAND_PARAMETER));
 
         params.clear();
+        params.set("ListOnly", "true");
+        context.assertTrue(HttpRequestParam.containsParam(params, LIST_ONLY_PARAMETER));
+
+        params.clear();
         params.set("xstorageExpand", "true");
         context.assertFalse(HttpRequestParam.containsParam(params, STORAGE_EXPAND_PARAMETER));
     }

@@ -138,6 +138,31 @@ The amount of sub resources that can be provided is defined in the configuration
 To override this for a single request, add the following request header with an appropriate value:
 > x-max-expand-resources: 1500
 
+#### List only
+
+To list all document resource paths below a collection without loading the document bodies, add the **listOnly=true** URL parameter together with **storageExpand=true**:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true**
+
+This returns a JSON response containing the matching document paths:
+
+```json
+{
+  "paths": [
+    "/yourStorageURL/collection/resource1",
+    "/yourStorageURL/collection/subCollection/resource2"
+  ]
+}
+```
+
+This can be used to discover deeply nested document resources before deciding which large resource bodies to load.
+
+To return only matching paths, add the optional **filter** URL parameter. The filter value is applied as a regular expression to each returned path:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&filter=.*/resource2$**
+
+`Attention:` When using Redis storage, this operation is not Redis Cluster safe. The current implementation uses Redis `SCAN`, which is node-local in Redis Cluster.
+
 
 ### Reject PUT requests on low memory (redis only)
 The redis storage provides a feature to reject PUT requests when the memory gets low. The information about the used memory is provided by the

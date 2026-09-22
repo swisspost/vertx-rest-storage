@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
+import org.swisspush.reststorage.PathListResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
@@ -48,6 +49,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.swisspush.reststorage.redis.RedisUtils.toPayload;
 
@@ -668,6 +671,118 @@ public class RedisStorage implements Storage {
                 String.valueOf(subResources.size())
         );
         reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.STORAGE_EXPAND, new StorageExpand(keys, arguments, handler, etag), 0);
+    }
+
+    @Override
+    public void list(String path, Handler<PathListResource> handler) {
+        final String key = encodePath(path);
+        final String matchPattern = redisResourcesPrefix + escapeRedisGlob(key) + (key.isEmpty() ? "*" : ":*");
+        redisProvider.redis().onComplete(redisEv -> {
+            if (redisEv.failed()) {
+                log.error("LIST request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException(redisProviderFailMsg, redisEv.cause()));
+                pathListError(handler, redisProviderFailMsg);
+                return;
+            }
+            scanResourcePaths(redisEv.result(), "0", matchPattern, new ArrayList<>(), keys -> {
+                if (keys.error) {
+                    handler.handle(keys);
+                } else {
+                    filterExpiredPaths(redisEv.result(), key, keys.paths, handler);
+                }
+            });
+        });
+    }
+
+    private void scanResourcePaths(RedisAPI redisAPI, String cursor, String matchPattern, List<String> keys, Handler<PathListResource> handler) {
+        // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
+        redisAPI.scan(Arrays.asList(cursor, "MATCH", matchPattern, "COUNT", "1000"), scanEv -> {
+            if (scanEv.failed()) {
+                log.error("LIST scan request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException("redisAPI.scan() failed", scanEv.cause()));
+                pathListError(handler, "redisAPI.scan() failed: " + scanEv.cause().getMessage());
+                return;
+            }
+            Response response = scanEv.result();
+            String nextCursor = response.get(0).toString();
+            for (Response keyResponse : response.get(1)) {
+                keys.add(keyResponse.toString());
+            }
+            if ("0".equals(nextCursor)) {
+                PathListResource result = new PathListResource();
+                result.paths = keys;
+                handler.handle(result);
+            } else {
+                scanResourcePaths(redisAPI, nextCursor, matchPattern, keys, handler);
+            }
+        });
+    }
+
+    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, Handler<PathListResource> handler) {
+        if (keys.isEmpty()) {
+            handleEmptyPathList(redisAPI, key, handler);
+            return;
+        }
+
+        List<String> paths = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger remaining = new AtomicInteger(keys.size());
+        AtomicBoolean failed = new AtomicBoolean(false);
+        long now = System.currentTimeMillis();
+        for (String resourceKey : keys) {
+            redisAPI.zscore(expirableSet, resourceKey, scoreEv -> {
+                if (scoreEv.failed()) {
+                    if (failed.compareAndSet(false, true)) {
+                        log.error("LIST zscore request in storage {} failed with message", storageIdentifier,
+                                exceptionFactory.newException("redisAPI.zscore() failed", scoreEv.cause()));
+                        pathListError(handler, "redisAPI.zscore() failed: " + scoreEv.cause().getMessage());
+                    }
+                    return;
+                }
+                Response score = scoreEv.result();
+                if (score == null || Double.parseDouble(score.toString()) >= now) {
+                    paths.add(decodeResourceKey(resourceKey));
+                }
+                if (remaining.decrementAndGet() == 0 && !failed.get()) {
+                    PathListResource result = new PathListResource();
+                    Collections.sort(paths);
+                    result.paths = paths;
+                    handler.handle(result);
+                }
+            });
+        }
+    }
+
+    private void handleEmptyPathList(RedisAPI redisAPI, String key, Handler<PathListResource> handler) {
+        redisAPI.exists(Arrays.asList(redisResourcesPrefix + key, redisCollectionsPrefix + key), existsEv -> {
+            PathListResource result = new PathListResource();
+            result.paths = Collections.emptyList();
+            if (existsEv.failed()) {
+                log.error("LIST exists request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException("redisAPI.exists() failed", existsEv.cause()));
+                result.error = true;
+                result.errorMessage = "redisAPI.exists() failed: " + existsEv.cause().getMessage();
+            } else {
+                result.exists = existsEv.result().toLong() > 0;
+            }
+            handler.handle(result);
+        });
+    }
+
+    private String decodeResourceKey(String resourceKey) {
+        String encodedPath = resourceKey.substring(redisResourcesPrefix.length());
+        return ResourceNameUtil.resetReplacedColonsAndSemiColons(encodedPath.replaceAll(":", "/"));
+    }
+
+    private String escapeRedisGlob(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '*' || c == '?' || c == '[' || c == ']' || c == '\\') {
+                escaped.append('\\');
+            }
+            escaped.append(c);
+        }
+        return escaped.toString();
     }
 
     /**
@@ -1292,6 +1407,14 @@ public class RedisStorage implements Storage {
     private void notModified(Handler<Resource> handler) {
         Resource r = new Resource();
         r.modified = false;
+        handler.handle(r);
+    }
+
+    private void pathListError(Handler<PathListResource> handler, String message) {
+        PathListResource r = new PathListResource();
+        r.error = true;
+        r.errorMessage = message;
+        r.paths = Collections.emptyList();
         handler.handle(r);
     }
 

@@ -2,6 +2,7 @@ package org.swisspush.reststorage.mocks;
 
 import io.vertx.core.Handler;
 import org.swisspush.reststorage.DocumentResource;
+import org.swisspush.reststorage.PathListResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
 import org.swisspush.reststorage.util.LockMode;
@@ -33,6 +34,11 @@ public class FailFastRestStorage implements Storage {
 
     @Override
     public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
+        throw new UnsupportedOperationException(msg);
+    }
+
+    @Override
+    public void list(String path, Handler<PathListResource> handler) {
         throw new UnsupportedOperationException(msg);
     }
 

@@ -14,9 +14,12 @@ import org.swisspush.reststorage.util.LockMode;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 
 public class FileSystemStorage implements Storage {
@@ -292,5 +295,40 @@ public class FileSystemStorage implements Storage {
     @Override
     public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
         throw new UnsupportedOperationException("Method 'storageExpand' is not yet implemented for the FileSystemStorage");
+    }
+
+    @Override
+    public void list(String path, Handler<PathListResource> handler) {
+        vertx.executeBlocking(promise -> {
+            PathListResource result = new PathListResource();
+            result.paths = new java.util.ArrayList<>();
+            Path fullPath = Path.of(canonicalize(path));
+            if (!Files.exists(fullPath)) {
+                result.exists = false;
+                promise.complete(result);
+                return;
+            }
+            if (Files.isRegularFile(fullPath)) {
+                promise.complete(result);
+                return;
+            }
+            try (Stream<Path> pathStream = Files.walk(fullPath)) {
+                pathStream
+                        .filter(Files::isRegularFile)
+                        .map(this::toStoragePath)
+                        .sorted()
+                        .forEach(result.paths::add);
+                promise.complete(result);
+            } catch (IOException e) {
+                result.error = true;
+                result.errorMessage = e.getMessage();
+                promise.complete(result);
+            }
+        }, event -> handler.handle((PathListResource) event.result()));
+    }
+
+    private String toStoragePath(Path path) {
+        String relativePath = Path.of(root).relativize(path).toString().replace(File.separatorChar, '/');
+        return "/" + relativePath;
     }
 }

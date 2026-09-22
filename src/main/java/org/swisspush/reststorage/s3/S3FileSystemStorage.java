@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
+import org.swisspush.reststorage.PathListResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 
 public class S3FileSystemStorage implements Storage {
@@ -334,6 +336,42 @@ public class S3FileSystemStorage implements Storage {
     @Override
     public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
         throw new UnsupportedOperationException("Method 'storageExpand' not supported in S3FileSystemStorage");
+    }
+
+    @Override
+    public void list(String path, Handler<PathListResource> handler) {
+        vertx.executeBlocking(promise -> {
+            PathListResource result = new PathListResource();
+            result.paths = new java.util.ArrayList<>();
+            Path fullDirPath = canonicalize(path, true);
+            Path fullFilePath = canonicalize(path, false);
+            if (Files.isRegularFile(fullFilePath, LinkOption.NOFOLLOW_LINKS)) {
+                promise.complete(result);
+                return;
+            }
+            if (!Files.isDirectory(fullDirPath, LinkOption.NOFOLLOW_LINKS)) {
+                result.exists = false;
+                promise.complete(result);
+                return;
+            }
+            try (Stream<Path> pathStream = Files.walk(fullDirPath)) {
+                pathStream
+                        .filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS))
+                        .map(this::toStoragePath)
+                        .sorted()
+                        .forEach(result.paths::add);
+                promise.complete(result);
+            } catch (IOException e) {
+                result.error = true;
+                result.errorMessage = e.getMessage();
+                promise.complete(result);
+            }
+        }, event -> handler.handle((PathListResource) event.result()));
+    }
+
+    private String toStoragePath(Path path) {
+        String relativePath = root.relativize(path).toString().replace(File.separatorChar, '/');
+        return "/" + relativePath;
     }
 
     /**

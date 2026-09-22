@@ -18,8 +18,11 @@ import org.slf4j.Logger;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.*;
 
+import java.net.URLDecoder;
 import java.text.DecimalFormat;
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.swisspush.reststorage.util.HttpRequestHeader.*;
@@ -627,6 +630,24 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         } else {
             if (getBoolean(request.params(), LIST_ONLY_PARAMETER)) {
                 final String path = cleanPath(request.path().substring(prefixFixed.length()));
+                final Pattern filterPattern;
+                String filter = getString(request.params(), FILTER_PARAMETER);
+                if (filter == null || filter.isEmpty()) {
+                    filterPattern = null;
+                } else {
+                    try {
+                        filter = URLDecoder.decode(filter, UTF_8);
+                    } catch (IllegalArgumentException ex) {
+                        respondWithBadRequest(request, "Bad Request: Unable to decode filter: " + filter);
+                        return;
+                    }
+                    try {
+                        filterPattern = Pattern.compile(filter);
+                    } catch (PatternSyntaxException ex) {
+                        respondWithBadRequest(request, "Bad Request: Invalid filter regex: " + filter);
+                        return;
+                    }
+                }
                 storage.list(path, resource -> {
                     var rsp = ctx.response();
                     if (resource.error) {
@@ -646,7 +667,17 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                         return;
                     }
 
-                    String body = new JsonObject().put("paths", new JsonArray(resource.paths)).encode();
+                    List<String> paths = resource.paths;
+                    if (filterPattern != null) {
+                        paths = new ArrayList<>();
+                        for (String resourcePath : resource.paths) {
+                            if (filterPattern.matcher(resourcePath).find()) {
+                                paths.add(resourcePath);
+                            }
+                        }
+                    }
+
+                    String body = new JsonObject().put("paths", new JsonArray(paths)).encode();
                     rsp.headers().add(CONTENT_LENGTH.getName(), "" + body.getBytes(UTF_8).length);
                     rsp.headers().add(CONTENT_TYPE.getName(), "application/json; charset=utf-8");
                     rsp.end(body);

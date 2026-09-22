@@ -191,6 +191,72 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
     }
 
     @Test
+    public void testListOnlyFiltersDocumentPaths(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"stuff-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff");
+        with().body("{ \"big\": \"a-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a");
+        with().body("{ \"big\": \"b-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b");
+
+        given()
+                .queryParam("storageExpand", "true")
+                .queryParam("listOnly", "true")
+                .queryParam("filter", ".*/(stuff|b)$")
+                .when()
+                .post("/server/resources/data/myService/vehicles")
+                .then()
+                .assertThat().statusCode(200).contentType(ContentType.JSON)
+                .body("paths", containsInAnyOrder(
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
+                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a")));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyFiltersDocumentPathsWithEncodedFilter(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"stuff-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff");
+        with().body("{ \"big\": \"a-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a");
+        with().body("{ \"big\": \"b-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b");
+
+        given()
+                .urlEncodingEnabled(false)
+                .when()
+                .post("/server/resources/data/myService/vehicles?storageExpand=true&listOnly=true&filter=.%2A%2F(stuff%7Cb)%24")
+                .then()
+                .assertThat().statusCode(200).contentType(ContentType.JSON)
+                .body("paths", containsInAnyOrder(
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
+                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a")));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyRejectsInvalidFilterRegex(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        given()
+                .queryParam("storageExpand", "true")
+                .queryParam("listOnly", "true")
+                .queryParam("filter", "[")
+                .when()
+                .post("/server/resources/data/myService/vehicles")
+                .then()
+                .assertThat().statusCode(BAD_REQUEST)
+                .body(equalTo("Bad Request: Invalid filter regex: ["));
+
+        async.complete();
+    }
+
+    @Test
     public void testDoubleSlashesHandlingForPOSTRequests(TestContext context) {
         Async async = context.async();
         delete("/server/resources");

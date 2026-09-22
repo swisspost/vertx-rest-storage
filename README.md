@@ -157,6 +157,10 @@ This returns a JSON response containing the matching document paths:
 
 This can be used to discover deeply nested document resources before deciding which large resource bodies to load.
 
+To return only matching paths, add the optional **filter** URL parameter. The filter value is applied as a regular expression to each returned path:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&filter=.*/resource2$**
+
 `Attention:` When using Redis storage, this operation is not Redis Cluster safe. The current implementation uses Redis `SCAN`, which is node-local in Redis Cluster.
 
 

@@ -675,7 +675,6 @@ public class RedisStorage implements Storage {
 
     @Override
     public void list(String path, Handler<PathListResource> handler) {
-        // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
         final String key = encodePath(path);
         final String matchPattern = redisResourcesPrefix + key + (key.isEmpty() ? "*" : ":*");
         redisProvider.redis().onComplete(redisEv -> {
@@ -696,6 +695,7 @@ public class RedisStorage implements Storage {
     }
 
     private void scanResourcePaths(RedisAPI redisAPI, String cursor, String matchPattern, List<String> keys, Handler<PathListResource> handler) {
+        // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
         redisAPI.scan(Arrays.asList(cursor, "MATCH", matchPattern, "COUNT", "1000"), scanEv -> {
             if (scanEv.failed()) {
                 log.error("LIST scan request in storage {} failed with message", storageIdentifier,

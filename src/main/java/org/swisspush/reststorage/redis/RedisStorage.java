@@ -676,7 +676,7 @@ public class RedisStorage implements Storage {
     @Override
     public void list(String path, Handler<PathListResource> handler) {
         final String key = encodePath(path);
-        final String matchPattern = redisResourcesPrefix + key + (key.isEmpty() ? "*" : ":*");
+        final String matchPattern = redisResourcesPrefix + escapeRedisGlob(key) + (key.isEmpty() ? "*" : ":*");
         redisProvider.redis().onComplete(redisEv -> {
             if (redisEv.failed()) {
                 log.error("LIST request in storage {} failed with message", storageIdentifier,
@@ -771,6 +771,18 @@ public class RedisStorage implements Storage {
     private String decodeResourceKey(String resourceKey) {
         String encodedPath = resourceKey.substring(redisResourcesPrefix.length());
         return ResourceNameUtil.resetReplacedColonsAndSemiColons(encodedPath.replaceAll(":", "/"));
+    }
+
+    private String escapeRedisGlob(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '*' || c == '?' || c == '[' || c == ']' || c == '\\') {
+                escaped.append('\\');
+            }
+            escaped.append(c);
+        }
+        return escaped.toString();
     }
 
     /**

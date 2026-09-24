@@ -21,8 +21,6 @@ import org.swisspush.reststorage.util.*;
 import java.net.URLDecoder;
 import java.text.DecimalFormat;
 import java.util.*;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.swisspush.reststorage.util.HttpRequestHeader.*;
@@ -30,6 +28,8 @@ import static org.swisspush.reststorage.util.HttpRequestParam.getString;
 import static org.swisspush.reststorage.util.HttpRequestParam.*;
 
 public class RestStorageHandler implements Handler<HttpServerRequest> {
+
+    private static final int MAX_FILTER_LENGTH = 256;
 
     private final Logger log;
     private final Router router;
@@ -630,24 +630,21 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         } else {
             if (getBoolean(request.params(), LIST_ONLY_PARAMETER)) {
                 final String path = cleanPath(request.path().substring(prefixFixed.length()));
-                final Pattern filterPattern;
                 String filter = getString(request.params(), FILTER_PARAMETER);
-                if (filter == null || filter.isEmpty()) {
-                    filterPattern = null;
-                } else {
+                if (filter != null && !filter.isEmpty()) {
                     try {
                         filter = URLDecoder.decode(filter, UTF_8);
                     } catch (IllegalArgumentException ex) {
                         respondWithBadRequest(request, "Bad Request: Unable to decode filter: " + filter);
                         return;
                     }
-                    try {
-                        filterPattern = Pattern.compile(filter);
-                    } catch (PatternSyntaxException ex) {
-                        respondWithBadRequest(request, "Bad Request: Invalid filter regex: " + filter);
+                    if (filter.length() > MAX_FILTER_LENGTH) {
+                        respondWithBadRequest(request,
+                                "Bad Request: Filter exceeds maximum length of " + MAX_FILTER_LENGTH + " characters");
                         return;
                     }
                 }
+                final String pathFilter = filter;
                 storage.list(path, resource -> {
                     var rsp = ctx.response();
                     if (resource.error) {
@@ -668,10 +665,10 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                     }
 
                     List<String> paths = resource.paths;
-                    if (filterPattern != null) {
+                    if (pathFilter != null && !pathFilter.isEmpty()) {
                         paths = new ArrayList<>();
                         for (String resourcePath : resource.paths) {
-                            if (filterPattern.matcher(resourcePath).find()) {
+                            if (resourcePath.contains(pathFilter)) {
                                 paths.add(resourcePath);
                             }
                         }

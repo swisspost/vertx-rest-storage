@@ -202,15 +202,15 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
         given()
                 .queryParam("storageExpand", "true")
                 .queryParam("listOnly", "true")
-                .queryParam("filter", ".*/(stuff|b)$")
+                .queryParam("filter", "/more/more-1/")
                 .when()
                 .post("/server/resources/data/myService/vehicles")
                 .then()
                 .assertThat().statusCode(200).contentType(ContentType.JSON)
                 .body("paths", containsInAnyOrder(
-                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
                         "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
-                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a")));
+                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff")));
 
         async.complete();
     }
@@ -227,31 +227,51 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
         given()
                 .urlEncodingEnabled(false)
                 .when()
-                .post("/server/resources/data/myService/vehicles?storageExpand=true&listOnly=true&filter=.%2A%2F(stuff%7Cb)%24")
+                .post("/server/resources/data/myService/vehicles?storageExpand=true&listOnly=true&filter=%2Fmore%2Fmore-1%2F")
                 .then()
                 .assertThat().statusCode(200).contentType(ContentType.JSON)
                 .body("paths", containsInAnyOrder(
-                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
                         "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
-                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a")));
+                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff")));
 
         async.complete();
     }
 
     @Test
-    public void testListOnlyRejectsInvalidFilterRegex(TestContext context) {
+    public void testListOnlyTreatsRegexCharactersLiterally(TestContext context) {
         Async async = context.async();
         delete("/server/resources");
+
+        with().body("{ \"big\": \"body\" }").put("/server/resources/data/literal.name");
+        with().body("{ \"big\": \"body\" }").put("/server/resources/data/other");
 
         given()
                 .queryParam("storageExpand", "true")
                 .queryParam("listOnly", "true")
-                .queryParam("filter", "[")
+                .queryParam("filter", ".")
                 .when()
-                .post("/server/resources/data/myService/vehicles")
+                .post("/server/resources/data")
+                .then()
+                .assertThat().statusCode(HTTP_OK)
+                .body("paths", contains("/server/resources/data/literal.name"));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyRejectsOversizedFilter(TestContext context) {
+        Async async = context.async();
+
+        given()
+                .queryParam("storageExpand", "true")
+                .queryParam("listOnly", "true")
+                .queryParam("filter", "a".repeat(257))
+                .when()
+                .post("/server/resources/data")
                 .then()
                 .assertThat().statusCode(BAD_REQUEST)
-                .body(equalTo("Bad Request: Invalid filter regex: ["));
+                .body(equalTo("Bad Request: Filter exceeds maximum length of 256 characters"));
 
         async.complete();
     }

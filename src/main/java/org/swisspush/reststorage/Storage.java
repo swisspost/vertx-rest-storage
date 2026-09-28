@@ -44,12 +44,22 @@ public interface Storage {
     /**
      * Lists all document resource paths below the provided path without loading the document bodies.
      * <p>
+     * This operation is paginated: at most {@code limit} paths are returned per call, together with an opaque
+     * {@code nextCursor} in the result which can be passed back as {@code cursor} to fetch the next page. A
+     * {@code nextCursor} of {@code 0} indicates that iteration is complete.
+     * <p>
      * Redis implementation note: this operation is not Redis Cluster safe.
      *
      * @param path the base path whose descendant document paths should be listed
+     * @param limit the maximum number of resource paths to return in this page
+     * @param filter an optional literal substring; when provided, only paths containing it are returned.
+     *               Implementations are encouraged to apply this filter natively (e.g. as part of a key scan
+     *               pattern) instead of post-filtering the full result set
+     * @param cursor an opaque cursor as previously returned in {@link PathListResource#nextCursor}, or
+     *               {@code 0} to start a new listing from the beginning
      * @param handler the callback invoked with the list result
      */
-    void list(String path, Handler<PathListResource> handler);
+    void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler);
 
     /**
      * Stores or updates a resource without explicit locking.

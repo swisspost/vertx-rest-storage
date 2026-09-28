@@ -14,7 +14,8 @@ public enum HttpRequestParam {
     LIST_ONLY_PARAMETER("listOnly"),
     FILTER_PARAMETER("filter"),
     LIMIT_PARAMETER("limit"),
-    OFFSET_PARAMETER("offset");
+    OFFSET_PARAMETER("offset"),
+    CURSOR_PARAMETER("cursor");
 
     private final String name;
 

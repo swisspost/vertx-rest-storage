@@ -19,6 +19,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 
@@ -298,7 +299,7 @@ public class FileSystemStorage implements Storage {
     }
 
     @Override
-    public void list(String path, Handler<PathListResource> handler) {
+    public void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler) {
         vertx.executeBlocking(promise -> {
             PathListResource result = new PathListResource();
             result.paths = new java.util.ArrayList<>();
@@ -312,12 +313,19 @@ public class FileSystemStorage implements Storage {
                 promise.complete(result);
                 return;
             }
+            final int offset = Math.max(cursor, 0);
             try (Stream<Path> pathStream = Files.walk(fullPath)) {
-                pathStream
+                List<String> matched = pathStream
                         .filter(Files::isRegularFile)
                         .map(this::toStoragePath)
+                        .filter(p -> filter == null || filter.isEmpty() || p.contains(filter))
                         .sorted()
-                        .forEach(result.paths::add);
+                        .collect(Collectors.toList());
+                int toIndex = Math.min(offset + limit, matched.size());
+                if (offset < matched.size()) {
+                    result.paths.addAll(matched.subList(offset, toIndex));
+                }
+                result.nextCursor = toIndex < matched.size() ? toIndex : 0;
                 promise.complete(result);
             } catch (IOException e) {
                 result.error = true;

@@ -674,9 +674,9 @@ public class RedisStorage implements Storage {
     }
 
     @Override
-    public void list(String path, Handler<PathListResource> handler) {
+    public void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler) {
         final String key = encodePath(path);
-        final String matchPattern = redisResourcesPrefix + escapeRedisGlob(key) + (key.isEmpty() ? "*" : ":*");
+        final String matchPattern = buildListMatchPattern(key, filter);
         redisProvider.redis().onComplete(redisEv -> {
             if (redisEv.failed()) {
                 log.error("LIST request in storage {} failed with message", storageIdentifier,
@@ -684,43 +684,93 @@ public class RedisStorage implements Storage {
                 pathListError(handler, redisProviderFailMsg);
                 return;
             }
-            scanResourcePaths(redisEv.result(), "0", matchPattern, new ArrayList<>(), keys -> {
-                if (keys.error) {
-                    handler.handle(keys);
+            scanResourcePage(redisEv.result(), cursor, matchPattern, limit, page -> {
+                if (page.error) {
+                    pathListError(handler, page.errorMessage);
                 } else {
-                    filterExpiredPaths(redisEv.result(), key, keys.paths, handler);
+                    filterExpiredPaths(redisEv.result(), key, page.keys, limit, page.nextCursor, handler);
                 }
             });
         });
     }
 
-    private void scanResourcePaths(RedisAPI redisAPI, String cursor, String matchPattern, List<String> keys, Handler<PathListResource> handler) {
+    /**
+     * Builds the Redis {@code SCAN MATCH} glob pattern used by {@link #list(String, int, String, int, Handler)}.
+     * <p>
+     * The optional filter is encoded the same way resource paths are encoded as Redis keys (colons/semicolons
+     * escaped, slashes turned into colons) and embedded as a literal glob fragment surrounded by wildcards, so
+     * that only keys already containing the filter substring are returned by Redis itself. This avoids fetching
+     * the full descendant key set and filtering it again in a loop.
+     *
+     * @param key the already Redis-encoded base path
+     * @param filter the optional literal substring filter, may be null or empty
+     * @return the glob pattern to use with Redis {@code SCAN ... MATCH}
+     */
+    private String buildListMatchPattern(String key, String filter) {
+        StringBuilder pattern = new StringBuilder(redisResourcesPrefix).append(escapeRedisGlob(key));
+        if (!key.isEmpty()) {
+            pattern.append(':');
+        }
+        pattern.append('*');
+        if (filter != null && !filter.isEmpty()) {
+            pattern.append(escapeRedisGlob(encodeFilter(filter))).append('*');
+        }
+        return pattern.toString();
+    }
+
+    private String encodeFilter(String filter) {
+        return ResourceNameUtil.replaceColonsAndSemiColons(filter).replaceAll("/", ":");
+    }
+
+    /**
+     * Result of a single Redis {@code SCAN} round: the matched keys of this page plus the cursor to resume
+     * scanning ({@code 0} when the scan is complete), or an error.
+     */
+    private static class ScanPage {
+        List<String> keys = Collections.emptyList();
+        int nextCursor = 0;
+        boolean error;
+        String errorMessage;
+    }
+
+    /**
+     * Performs exactly one Redis {@code SCAN} round starting at the given cursor, letting the caller
+     * paginate across multiple {@code list} invocations instead of eagerly collecting the whole key space.
+     */
+    private void scanResourcePage(RedisAPI redisAPI, int cursor, String matchPattern, int limit, Handler<ScanPage> handler) {
         // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
-        redisAPI.scan(Arrays.asList(cursor, "MATCH", matchPattern, "COUNT", "1000"), scanEv -> {
+        redisAPI.scan(Arrays.asList(String.valueOf(cursor), "MATCH", matchPattern, "COUNT", String.valueOf(limit)), scanEv -> {
             if (scanEv.failed()) {
                 log.error("LIST scan request in storage {} failed with message", storageIdentifier,
                         exceptionFactory.newException("redisAPI.scan() failed", scanEv.cause()));
-                pathListError(handler, "redisAPI.scan() failed: " + scanEv.cause().getMessage());
+                ScanPage page = new ScanPage();
+                page.error = true;
+                page.errorMessage = "redisAPI.scan() failed: " + scanEv.cause().getMessage();
+                handler.handle(page);
                 return;
             }
             Response response = scanEv.result();
-            String nextCursor = response.get(0).toString();
+            ScanPage page = new ScanPage();
+            try {
+                page.nextCursor = Integer.parseUnsignedInt(response.get(0).toString());
+            } catch (NumberFormatException ex) {
+                page.error = true;
+                page.errorMessage = "redisAPI.scan() returned a non-numeric cursor: " + response.get(0);
+                handler.handle(page);
+                return;
+            }
+            List<String> keys = new ArrayList<>();
             for (Response keyResponse : response.get(1)) {
                 keys.add(keyResponse.toString());
             }
-            if ("0".equals(nextCursor)) {
-                PathListResource result = new PathListResource();
-                result.paths = keys;
-                handler.handle(result);
-            } else {
-                scanResourcePaths(redisAPI, nextCursor, matchPattern, keys, handler);
-            }
+            page.keys = keys;
+            handler.handle(page);
         });
     }
 
-    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, Handler<PathListResource> handler) {
+    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, int limit, int nextCursor, Handler<PathListResource> handler) {
         if (keys.isEmpty()) {
-            handleEmptyPathList(redisAPI, key, handler);
+            handleEmptyPathList(redisAPI, key, nextCursor, handler);
             return;
         }
 
@@ -745,17 +795,19 @@ public class RedisStorage implements Storage {
                 if (remaining.decrementAndGet() == 0 && !failed.get()) {
                     PathListResource result = new PathListResource();
                     Collections.sort(paths);
-                    result.paths = paths;
+                    result.paths = paths.size() > limit ? new ArrayList<>(paths.subList(0, limit)) : paths;
+                    result.nextCursor = nextCursor;
                     handler.handle(result);
                 }
             });
         }
     }
 
-    private void handleEmptyPathList(RedisAPI redisAPI, String key, Handler<PathListResource> handler) {
+    private void handleEmptyPathList(RedisAPI redisAPI, String key, int nextCursor, Handler<PathListResource> handler) {
         redisAPI.exists(Arrays.asList(redisResourcesPrefix + key, redisCollectionsPrefix + key), existsEv -> {
             PathListResource result = new PathListResource();
             result.paths = Collections.emptyList();
+            result.nextCursor = nextCursor;
             if (existsEv.failed()) {
                 log.error("LIST exists request in storage {} failed with message", storageIdentifier,
                         exceptionFactory.newException("redisAPI.exists() failed", existsEv.cause()));

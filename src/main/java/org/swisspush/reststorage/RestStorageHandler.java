@@ -18,7 +18,6 @@ import org.slf4j.Logger;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.*;
 
-import java.net.URLDecoder;
 import java.text.DecimalFormat;
 import java.util.*;
 
@@ -30,6 +29,7 @@ import static org.swisspush.reststorage.util.HttpRequestParam.*;
 public class RestStorageHandler implements Handler<HttpServerRequest> {
 
     private static final int MAX_FILTER_LENGTH = 256;
+    private static final int MAX_LIST_LIMIT = 500;
 
     private final Logger log;
     private final Router router;
@@ -632,12 +632,6 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                 final String path = cleanPath(request.path().substring(prefixFixed.length()));
                 String filter = getString(request.params(), FILTER_PARAMETER);
                 if (filter != null && !filter.isEmpty()) {
-                    try {
-                        filter = URLDecoder.decode(filter, UTF_8);
-                    } catch (IllegalArgumentException ex) {
-                        respondWithBadRequest(request, "Bad Request: Unable to decode filter: " + filter);
-                        return;
-                    }
                     if (filter.length() > MAX_FILTER_LENGTH) {
                         respondWithBadRequest(request,
                                 "Bad Request: Filter exceeds maximum length of " + MAX_FILTER_LENGTH + " characters");
@@ -645,7 +639,44 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                     }
                 }
                 final String pathFilter = filter;
-                storage.list(path, resource -> {
+
+                String limitParam = getString(request.params(), LIMIT_PARAMETER);
+                int parsedLimit = MAX_LIST_LIMIT;
+                if (limitParam != null && !limitParam.isEmpty()) {
+                    try {
+                        parsedLimit = Integer.parseInt(limitParam);
+                    } catch (NumberFormatException ex) {
+                        respondWithBadRequest(request,
+                                "Bad Request: limit must be a positive integer");
+                        return;
+                    }
+                    if (parsedLimit <= 0) {
+                        respondWithBadRequest(request,
+                                "Bad Request: limit must be a positive integer");
+                        return;
+                    }
+                    if (parsedLimit > MAX_LIST_LIMIT) {
+                        respondWithBadRequest(request,
+                                "Bad Request: limit exceeds maximum allowed value of " + MAX_LIST_LIMIT);
+                        return;
+                    }
+                }
+                final int limit = parsedLimit;
+                String cursorParam = getString(request.params(), CURSOR_PARAMETER);
+                int cursor = 0;
+                if (cursorParam != null && !cursorParam.isEmpty()) {
+                    try {
+                        cursor = Integer.parseInt(cursorParam);
+                    } catch (NumberFormatException ex) {
+                        respondWithBadRequest(request, "Bad Request: cursor must be a non-negative integer");
+                        return;
+                    }
+                    if (cursor < 0) {
+                        respondWithBadRequest(request, "Bad Request: cursor must be a non-negative integer");
+                        return;
+                    }
+                }
+                storage.list(path, limit, pathFilter, cursor, resource -> {
                     var rsp = ctx.response();
                     if (resource.error) {
                         rsp.setStatusCode(StatusCode.CONFLICT.getStatusCode());
@@ -665,16 +696,11 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                     }
 
                     List<String> paths = resource.paths;
-                    if (pathFilter != null && !pathFilter.isEmpty()) {
-                        paths = new ArrayList<>();
-                        for (String resourcePath : resource.paths) {
-                            if (resourcePath.contains(pathFilter)) {
-                                paths.add(resourcePath);
-                            }
-                        }
-                    }
 
-                    String body = new JsonObject().put("paths", new JsonArray(paths)).encode();
+                    String body = new JsonObject()
+                            .put("paths", new JsonArray(paths))
+                            .put("nextCursor", resource.nextCursor)
+                            .encode();
                     rsp.headers().add(CONTENT_LENGTH.getName(), "" + body.getBytes(UTF_8).length);
                     rsp.headers().add(CONTENT_TYPE.getName(), "application/json; charset=utf-8");
                     rsp.end(body);

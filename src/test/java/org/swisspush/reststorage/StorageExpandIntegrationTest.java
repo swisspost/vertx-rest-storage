@@ -20,6 +20,9 @@ import org.junit.runner.RunWith;
 import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 import org.swisspush.reststorage.util.HttpRequestHeader;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
 
@@ -272,6 +275,49 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
                 .then()
                 .assertThat().statusCode(BAD_REQUEST)
                 .body(equalTo("Bad Request: Filter exceeds maximum length of 256 characters"));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyPaginatesAllResultsUsingCursor(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        List<String> expectedPaths = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            String path = "/server/resources/data/pagination/res" + i;
+            with().body("{ \"foo\": \"bar\" }").put(path);
+            expectedPaths.add(path);
+        }
+
+        List<String> collectedPaths = new ArrayList<>();
+        String cursor = "0";
+        int loops = 0;
+        do {
+            Response response = given()
+                    .queryParam("storageExpand", "true")
+                    .queryParam("listOnly", "true")
+                    .queryParam("limit", "2")
+                    .queryParam("cursor", cursor)
+                    .when()
+                    .post("/server/resources/data/pagination")
+                    .then()
+                    .assertThat().statusCode(200).contentType(ContentType.JSON)
+                    .body("paths.size()", lessThanOrEqualTo(2))
+                    .extract().response();
+
+            List<String> paths = response.jsonPath().getList("paths", String.class);
+            collectedPaths.addAll(paths);
+            cursor = String.valueOf(response.jsonPath().getInt("nextCursor"));
+            loops++;
+            context.assertTrue(loops <= 10, "too many pagination loops, possible infinite loop");
+        } while (!"0".equals(cursor));
+
+        context.assertTrue(loops > 1, "expected more than a single page given limit=2 and 5 resources");
+        collectedPaths.sort(null);
+        expectedPaths.sort(null);
+        context.assertEquals(expectedPaths, collectedPaths);
 
         async.complete();
     }

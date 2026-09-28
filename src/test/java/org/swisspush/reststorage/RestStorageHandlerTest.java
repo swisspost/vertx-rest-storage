@@ -17,6 +17,7 @@ import io.vertx.ext.web.RoutingContext;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Matchers;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
@@ -28,6 +29,7 @@ import org.swisspush.reststorage.util.StatusCode;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.Matchers.eq;
@@ -197,6 +199,273 @@ public class RestStorageHandlerTest {
         // ASSERT
         verify(response, times(1)).setStatusCode(eq(StatusCode.UNAUTHORIZED.getStatusCode()));
         verifyZeroInteractions(storage); // storage should not be used because failed authentication should answer before accessing storage
+    }
+
+    @Test
+    public void listFilterIsPassedToStorageWithoutDecodingAgain(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest filterRequest = mock(HttpServerRequest.class);
+        HttpServerResponse filterResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(filterRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("filter", "+"));
+        when(filterRequest.path()).thenReturn("/data");
+        when(filterRequest.response()).thenReturn(filterResponse);
+        when(filterResponse.headers()).thenReturn(new HeadersMultiMap());
+        when(filterResponse.end(anyString())).thenReturn(Future.succeededFuture());
+        when(routingContext.request()).thenReturn(filterRequest);
+        when(routingContext.response()).thenReturn(filterResponse);
+
+        // storage is expected to already apply the filter natively (e.g. as part of a key scan pattern);
+        // the mock simulates that behaviour so this test can verify the handler no longer re-filters or
+        // double-decodes the raw filter value on its own.
+        doAnswer(invocation -> {
+            Handler<PathListResource> handler = invocation.getArgumentAt(4, Handler.class);
+            PathListResource resource = new PathListResource();
+            resource.paths = List.of("/data/a+b");
+            handler.handle(resource);
+            return null;
+        }).when(storage).list(eq("/data"), Matchers.anyInt(), eq("+"), Matchers.anyInt(), Matchers.any());
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(storage, times(1)).list(eq("/data"), Matchers.anyInt(), eq("+"), Matchers.anyInt(), Matchers.any());
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(filterResponse).end(body.capture());
+        testContext.assertEquals("{\"paths\":[\"/data/a+b\"],\"nextCursor\":0}", body.getValue());
+    }
+
+    @Test
+    public void listOnlyLimitExceedingMaximumRespondsWithBadRequest(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("limit", "501"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(listResponse, times(1)).setStatusCode(eq(StatusCode.BAD_REQUEST.getStatusCode()));
+        verifyZeroInteractions(storage);
+    }
+
+    @Test
+    public void listOnlyLimitNotANumberRespondsWithBadRequest(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("limit", "notANumber"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(listResponse, times(1)).setStatusCode(eq(StatusCode.BAD_REQUEST.getStatusCode()));
+        verifyZeroInteractions(storage);
+    }
+
+    @Test
+    public void listOnlyLimitNotPositiveRespondsWithBadRequest(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("limit", "0"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(listResponse, times(1)).setStatusCode(eq(StatusCode.BAD_REQUEST.getStatusCode()));
+        verifyZeroInteractions(storage);
+    }
+
+    @Test
+    public void listOnlyLimitWithinBoundsIsPassedToStorage(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("limit", "50"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(listResponse.headers()).thenReturn(new HeadersMultiMap());
+        when(listResponse.end(anyString())).thenReturn(Future.succeededFuture());
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        doAnswer(invocation -> {
+            Handler<PathListResource> handler = invocation.getArgumentAt(4, Handler.class);
+            PathListResource resource = new PathListResource();
+            resource.paths = List.of("/data/a");
+            handler.handle(resource);
+            return null;
+        }).when(storage).list(eq("/data"), eq(50), Matchers.any(), Matchers.anyInt(), Matchers.any());
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(storage, times(1)).list(eq("/data"), eq(50), Matchers.any(), Matchers.anyInt(), Matchers.any());
+    }
+
+    @Test
+    public void listOnlyWithoutLimitDefaultsToMaximum(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(listResponse.headers()).thenReturn(new HeadersMultiMap());
+        when(listResponse.end(anyString())).thenReturn(Future.succeededFuture());
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        doAnswer(invocation -> {
+            Handler<PathListResource> handler = invocation.getArgumentAt(4, Handler.class);
+            PathListResource resource = new PathListResource();
+            resource.paths = List.of("/data/a");
+            handler.handle(resource);
+            return null;
+        }).when(storage).list(eq("/data"), eq(500), Matchers.any(), Matchers.anyInt(), Matchers.any());
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(storage, times(1)).list(eq("/data"), eq(500), Matchers.any(), Matchers.anyInt(), Matchers.any());
+    }
+
+    @Test
+    public void listOnlyCursorNotANumberRespondsWithBadRequest(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("cursor", "abc"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(listResponse, times(1)).setStatusCode(eq(StatusCode.BAD_REQUEST.getStatusCode()));
+        verifyZeroInteractions(storage);
+    }
+
+    @Test
+    public void listOnlyCursorNegativeRespondsWithBadRequest(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("cursor", "-1"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(listResponse, times(1)).setStatusCode(eq(StatusCode.BAD_REQUEST.getStatusCode()));
+        verifyZeroInteractions(storage);
+    }
+
+    @Test
+    public void listOnlyCursorIsPassedToStorage(TestContext testContext) throws Exception {
+        restStorageHandler = new RestStorageHandler(
+                vertx, log, storage, newRestStorageWastefulExceptionFactory(), new ModuleConfiguration().prefix("/"));
+
+        HttpServerRequest listRequest = mock(HttpServerRequest.class);
+        HttpServerResponse listResponse = mock(HttpServerResponse.class);
+        RoutingContext routingContext = mock(RoutingContext.class);
+        when(listRequest.params()).thenReturn(new HeadersMultiMap()
+                .add("storageExpand", "true")
+                .add("listOnly", "true")
+                .add("cursor", "17"));
+        when(listRequest.path()).thenReturn("/data");
+        when(listRequest.response()).thenReturn(listResponse);
+        when(listResponse.headers()).thenReturn(new HeadersMultiMap());
+        when(listResponse.end(anyString())).thenReturn(Future.succeededFuture());
+        when(routingContext.request()).thenReturn(listRequest);
+        when(routingContext.response()).thenReturn(listResponse);
+
+        doAnswer(invocation -> {
+            Handler<PathListResource> handler = invocation.getArgumentAt(4, Handler.class);
+            PathListResource resource = new PathListResource();
+            resource.paths = List.of("/data/a");
+            handler.handle(resource);
+            return null;
+        }).when(storage).list(eq("/data"), eq(500), Matchers.any(), eq(17), Matchers.any());
+
+        Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
+        storageExpand.setAccessible(true);
+        storageExpand.invoke(restStorageHandler, routingContext);
+
+        verify(storage, times(1)).list(eq("/data"), eq(500), Matchers.any(), eq(17), Matchers.any());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package org.swisspush.reststorage;
 ;
+import com.google.common.annotations.VisibleForTesting;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -10,6 +11,8 @@ import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
+import org.swisspush.reststorage.migration.MigrateTool;
+import org.swisspush.reststorage.migration.tasks.ClusterPartitionMigrationTask;
 import org.swisspush.reststorage.redis.DefaultRedisProvider;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.redis.RedisStorage;
@@ -21,6 +24,8 @@ import static org.swisspush.reststorage.exception.RestStorageExceptionFactory.ne
 public class RestStorageMod extends AbstractVerticle {
 
     private final Logger log = LoggerFactory.getLogger(RestStorageMod.class);
+
+    private static volatile boolean migrationToolDisabled = false;
 
     private RedisProvider redisProvider;
     private final RestStorageExceptionFactory exceptionFactory;
@@ -112,12 +117,34 @@ public class RestStorageMod extends AbstractVerticle {
 
         redisProvider.redis().onComplete(event -> {
             if(event.succeeded()) {
-                initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
+                if (migrationToolDisabled) {
+                    initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
+                    return;
+                }
+
+                MigrateTool migrateTool = new MigrateTool(vertx, redisProvider, this.hashCode() + "");
+                if (moduleConfiguration.isRedisClusterPartitioningEnabled()) {
+                    migrateTool.addTask(new ClusterPartitionMigrationTask(redisProvider, moduleConfiguration));
+                }
+
+                migrateTool.start().onComplete(migrateResult -> {
+                    if (migrateResult.failed()) {
+                        log.warn("Migration failed, will continue to start the RestStorageMod anyway", migrateResult.cause());
+                    } else {
+                        log.info("Migration done, will continue to start the RestStorageMod");
+                    }
+                    initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
+                });
             } else {
                 initPromise.fail(exceptionFactory.newException("redisProvider.redis() failed", event.cause()));
             }
         });
 
         return initPromise.future();
+    }
+
+    @VisibleForTesting
+    public static void disableMigrationTool() {
+        migrationToolDisabled = true;
     }
 }

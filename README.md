@@ -300,6 +300,37 @@ Notes:
 * This setting is only relevant when running against Redis Cluster. It is safe, but unnecessary, to enable
   against a single-node Redis or Sentinel setup.
 
+#### Data Migration for Cluster Partitioning
+
+When enabling cluster partitioning on a deployment with existing data, use the `MigrateTool` to rewrite
+keys from non-cluster layout to cluster-compatible layout.
+
+**Quick Start:**
+```java
+MigrateTool migrateTool = new MigrateTool(vertx, redisProvider, "instance-1");
+migrateTool.addTask(new ClusterPartitionMigrationTask(redisProvider, config));
+migrateTool.start()
+    .onComplete(ar -> {
+        if (ar.succeeded()) {
+            // Enable redisClusterPartitioningEnabled = true
+        }
+    });
+```
+
+**Key features:**
+* Uses distributed Redis lock to ensure only one migration runs across cluster nodes
+* Automatically chains multiple tasks sequentially
+* Provides `Task` interface for custom migration logic
+* Handles multi-instance deployments safely
+* Idempotent: already-tagged keys are skipped, so re-running is a no-op
+
+**Important:** run the migration against the *pre-cluster* Redis (single-node or Sentinel), before switching
+the deployment to Redis Cluster. Keys are moved with server-side `RENAME` (atomic, binary-safe,
+TTL-preserving), which cannot move keys across hash slots. See [MIGRATION.md](MIGRATION.md) for the full key
+mapping and constraints.
+
+**For detailed migration instructions:** see [MIGRATION.md](MIGRATION.md)
+
 Properties not overridden will not be changed. Thus remaining default.
 
 To use default values only, the _ModuleConfiguration_ constructor without parameters can be used:

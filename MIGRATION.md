@@ -19,23 +19,10 @@ The migration tool provides:
 3. **ClusterPartitionMigrationTask**: Rewrites the whole REST Storage key space into its cluster-partitioned layout
 4. **Distributed Lock**: Ensures only one instance migrates data at a time across cluster
 
-### What `ClusterPartitionMigrationTask` rewrites
-
-| Key | Before | After |
-|---|---|---|
-| resource | `rest-storage:resources:project:a` | `rest-storage:resources:{project}:a` |
-| collection | `rest-storage:collections:project:a` | `rest-storage:collections:{project}:a` |
-| lock | `rest-storage:locks:project:a` | `rest-storage:locks:{project}:a` |
-| delta | `delta:resources:...`, `delta:etags:...` | tagged the same way |
-| expirable set | one global ZSET `rest-storage:expirable` | one ZSET per partition `rest-storage:expirable:{project}`, members rewritten |
-| root collection | ZSET `rest-storage:collections` | *deleted*; its members seed the partition registry |
-| partition registry | &mdash; | SET `rest-storage:locks-partitions` |
-
-The partition registry is not optional: cluster-mode root `GET`/`DELETE` and `cleanup` are served from it, so
-without it migrated data is invisible at root even though every resource key exists.
-
-The task is idempotent &mdash; keys that already carry their hash tag are detected and skipped, so a
-re-run is a no-op.
+For the full key-layout table, the completion flag, batching, and diagrams of the internal control
+flow, see [docs/ClusterPartitionMigrationTask.MD](docs/ClusterPartitionMigrationTask.MD). For how the
+distributed lock coordinates multiple REST Storage instances (with a 3-node walkthrough), see
+[docs/MigrateTool.md](docs/MigrateTool.md).
 
 ### Important constraints
 
@@ -47,6 +34,9 @@ re-run is a no-op.
   ISO-8859-1 strings and may be gzip binary, so round-tripping them through the string-based `RedisAPI`
   would transcode them as UTF-8 and corrupt them.
 - Key discovery uses `SCAN`, which only covers the node it is issued against.
+- The task is safe to re-run: once it completes, a permanent completion flag makes subsequent runs a
+  no-op instead of re-scanning the whole key space (see
+  [docs/ClusterPartitionMigrationTask.MD#completion-flag](docs/ClusterPartitionMigrationTask.MD#completion-flag)).
 
 ## Quick Start
 
@@ -178,17 +168,11 @@ migrateTool.addTask(new MyCustomMigrationTask());
 
 ## Distributed Locking
 
-The `MigrateTool` uses Redis SET NX to implement distributed locking:
-
-1. First instance to acquire lock runs all tasks
-2. Other instances wait for lock to be released
-3. Lock TTL is 10 seconds, refreshed every 2 seconds
-4. If an instance crashes, lock auto-expires
-
-This ensures:
-- Tasks run only once across cluster
-- Safe for multi-instance deployments
-- Automatic failover if instance dies
+The `MigrateTool` uses a Redis `SET NX PX` lock (refreshed every 2 seconds while held, 10 second TTL)
+so that only one instance runs the tasks while every other instance simply waits for the lock to be
+released - safe for multi-instance deployments, with automatic failover if the running instance
+crashes. See [docs/MigrateTool.md](docs/MigrateTool.md) for the full sequence diagram and a worked
+3-node example.
 
 ## Troubleshooting
 
@@ -232,6 +216,8 @@ The migration lock key is: `rest-storage:migration:lock`
 
 ## See Also
 
-- [Redis Cluster Support](../README.md#redis-cluster-support)
-- [ModuleConfiguration](../README.md#configuration)
+- [docs/ClusterPartitionMigrationTask.MD](docs/ClusterPartitionMigrationTask.MD) - key layout, batching, completion flag, control-flow diagrams
+- [docs/MigrateTool.md](docs/MigrateTool.md) - distributed lock coordination, 3-node example
+- [Redis Cluster Support](README.md#redis-cluster-support)
+- [ModuleConfiguration](README.md#configuration)
 - [MigrateTool JavaDoc](./src/main/java/org/swisspush/reststorage/migration/MigrateTool.java)

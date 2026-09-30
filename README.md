@@ -307,7 +307,10 @@ Notes:
 * If `redisClusterPartitioningEnabled` is `true`, `RestStorageMod` runs the migration (see below) on every
   boot before serving traffic. If that migration fails, startup itself fails rather than silently
   continuing with partitioning enabled - proceeding anyway could make pre-existing, not-yet-migrated data
-  permanently invisible to tagged-key-only reads/writes/deletes.
+  permanently invisible to tagged-key-only reads/writes/deletes. A genuine migration failure leaves a
+  permanent (non-expiring) lock marker in Redis, so every instance keeps failing to start until an
+  operator fixes the underlying issue and manually deletes `rest-storage:migration:lock` - see
+  [MIGRATION.md](MIGRATION.md) and [docs/MigrateTool.md](docs/MigrateTool.md) for details.
 
 #### Data Migration for Cluster Partitioning
 

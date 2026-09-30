@@ -11,7 +11,6 @@ import org.swisspush.reststorage.redis.RedisProvider;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -65,6 +64,18 @@ public class MigrateTool {
             "else " +
             "  return 0 " +
             "end";
+    // Turns the lock into a permanent failure marker instead of releasing it: SET (without any
+    // TTL/EX/PX) both changes the value and implicitly clears the key's existing TTL, so the key
+    // never disappears on its own. This lets waiting instances (which only ever see the lock via
+    // GET/EXISTS) distinguish "still running" from "failed and stuck" instead of mistaking the
+    // failure for a completed migration once some TTL eventually expired it away.
+    private static final String MARK_LOCK_FAILED_SCRIPT =
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('SET', KEYS[1], ARGV[2]) " +
+            "else " +
+            "  return 0 " +
+            "end";
+    private static final String LOCK_FAILED_MARKER_SUFFIX = ":FAILED";
 
     private final String instanceId;
     private final RedisProvider redisProvider;
@@ -133,19 +144,25 @@ public class MigrateTool {
                 startRefreshTimer();
                 runTasksSequentially()
                     .onComplete(runResult -> {
-                        releaseLock().onComplete(releaseResult -> {
-                            if (lockOwnershipLost) {
-                                // The lock (and thus our exclusive right to run tasks) may have been
-                                // held by another instance for part of the run - the result cannot be
-                                // trusted as a safe, exclusive migration outcome.
-                                migratePromise.fail("Migration lock ownership was lost during task execution "
-                                        + "(instanceId:" + instanceId + "); result is not trustworthy");
-                            } else if (runResult.failed()) {
-                                migratePromise.fail(runResult.cause());
-                            } else {
-                                migratePromise.complete();
-                            }
-                        });
+                        if (lockOwnershipLost) {
+                            // The lock (and thus our exclusive right to run tasks) may have been
+                            // held by another instance for part of the run - the result cannot be
+                            // trusted as a safe, exclusive migration outcome. We no longer own the
+                            // lock at all, so releaseLock()/markLockAsFailed() would both be no-ops
+                            // against it (CAS token mismatch) - just fail locally.
+                            stopRefreshTimer();
+                            migratePromise.fail("Migration lock ownership was lost during task execution "
+                                    + "(instanceId:" + instanceId + "); result is not trustworthy");
+                        } else if (runResult.failed()) {
+                            // Do NOT release the lock: turn it into a permanent failure marker instead,
+                            // so waiting instances see the failure explicitly rather than mistaking a
+                            // (would-be) released/expired lock for a completed migration. Requires manual
+                            // operator intervention (delete the lock key) before migration can be retried.
+                            markLockAsFailed().onComplete(markResult ->
+                                    migratePromise.fail(runResult.cause()));
+                        } else {
+                            releaseLock().onComplete(releaseResult -> migratePromise.complete());
+                        }
                     });
             } else {
                 // Lock held by another instance - wait for it to complete
@@ -260,6 +277,59 @@ public class MigrateTool {
     }
 
     /**
+     * Turns the lock into a permanent failure marker (CAS-checked, only if it still holds our token),
+     * instead of releasing it, when a task genuinely failed. Unlike {@link #releaseLock()}, this never
+     * lets the key disappear on its own: {@code SET} without a TTL both changes the value and clears
+     * any existing expiry, so waiting instances (see {@link #pollLockKey}) can tell "still running"
+     * apart from "failed and stuck", rather than the lock silently going away (via a future TTL expiry
+     * or manual cleanup) and being mistaken for a successfully completed migration. A human must
+     * delete the lock key manually before the migration can be retried.
+     */
+    private Future<Void> markLockAsFailed() {
+        stopRefreshTimer();
+        Promise<Void> promise = Promise.promise();
+
+        redisProvider.redis().onComplete(ar -> {
+            if (ar.failed()) {
+                log.warn("Redis connection failed while marking migration lock as failed (instanceId:{})",
+                        instanceId, ar.cause());
+                promise.fail(ar.cause());
+                return;
+            }
+
+            RedisAPI redisAPI = ar.result();
+            String token = lockToken;
+            if (token == null) {
+                log.debug("No lock token to mark as failed (instanceId:{})", instanceId);
+                promise.complete();
+                return;
+            }
+            String failedMarker = token + LOCK_FAILED_MARKER_SUFFIX;
+            redisAPI.eval(Arrays.asList(MARK_LOCK_FAILED_SCRIPT, "1", MIGRATION_LOCK_KEY, token, failedMarker),
+                    evalResult -> {
+                if (evalResult.failed()) {
+                    log.warn("Failed to mark migration lock as failed (instanceId:{})", instanceId, evalResult.cause());
+                    promise.fail(evalResult.cause());
+                } else {
+                    boolean marked = evalResult.result() != null && "OK".equalsIgnoreCase(evalResult.result().toString());
+                    if (marked) {
+                        log.error("Migration task failed (instanceId:{}); lock left in place as a permanent failure "
+                                + "marker - manual operator intervention (delete '{}') is required before retrying",
+                                instanceId, MIGRATION_LOCK_KEY);
+                    } else {
+                        log.warn("Migration lock was not marked as failed because it no longer holds our token "
+                                + "(instanceId:{}) - another instance may already own it", instanceId);
+                    }
+                    lockToken = null;
+                    promise.complete();
+                }
+            });
+        });
+
+        return promise.future();
+    }
+
+    /**
      * Runs all registered tasks sequentially.
      */
     private Future<Void> runTasksSequentially() {
@@ -292,7 +362,10 @@ public class MigrateTool {
     }
 
     /**
-     * Polls the lock key to check if migration is still in progress.
+     * Polls the lock key to check if migration is still in progress. Uses GET rather than EXISTS so
+     * a permanent failure marker (see {@link #markLockAsFailed()}) can be recognized and surfaced as
+     * a failure here too, instead of being polled forever or - worse - mistaken for a still-running
+     * migration that will eventually "complete" once observed as absent.
      */
     private void pollLockKey(Promise<Void> promise) {
         redisProvider.redis().onComplete(ar -> {
@@ -303,17 +376,22 @@ public class MigrateTool {
             }
             
             RedisAPI redisAPI = ar.result();
-            redisAPI.exists(Collections.singletonList(MIGRATION_LOCK_KEY), existsResult -> {
-                if (existsResult.failed()) {
-                    log.error("Failed to check lock key (instanceId:{})", instanceId, existsResult.cause());
-                    promise.fail(existsResult.cause());
+            redisAPI.get(MIGRATION_LOCK_KEY, getResult -> {
+                if (getResult.failed()) {
+                    log.error("Failed to check lock key (instanceId:{})", instanceId, getResult.cause());
+                    promise.fail(getResult.cause());
                     return;
                 }
-                
-                if (existsResult.result().toInteger() == 0) {
+
+                String value = getResult.result() == null ? null : getResult.result().toString();
+                if (value == null) {
                     // Lock released, migration complete
                     log.debug("Lock key no longer exists, migration complete (instanceId:{})", instanceId);
                     promise.complete();
+                } else if (value.endsWith(LOCK_FAILED_MARKER_SUFFIX)) {
+                    log.error("Migration failed on the instance that held the lock (instanceId:{}); lock marker "
+                            + "indicates failure, not proceeding as if migration succeeded", instanceId);
+                    promise.fail("Migration failed on another instance (lock marker: " + value + ")");
                 } else {
                     // Lock still held, check again later
                     log.debug("Lock key still exists, checking again in {}ms (instanceId:{})", 

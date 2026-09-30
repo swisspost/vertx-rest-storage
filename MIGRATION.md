@@ -181,8 +181,12 @@ value a random per-acquisition ownership token) so that only one instance runs t
 other instance simply waits for the lock to be released - safe for multi-instance deployments, with
 automatic failover if the running instance crashes, and safe even if a stalled instance's TTL expires
 and another instance takes over mid-run (the ownership token prevents the stalled instance from later
-refreshing or deleting the new owner's lock). See [docs/MigrateTool.md](docs/MigrateTool.md) for the
-full sequence diagram, the ownership-token rationale, and a worked 3-node example.
+refreshing or deleting the new owner's lock). **If the migration task itself fails, the lock is
+deliberately not released or allowed to expire** - it is turned into a permanent failure marker so that
+every instance (the failed one and any that were waiting) fails too, instead of some instances silently
+proceeding as if the migration succeeded; a human must manually delete the lock key before retrying. See
+[docs/MigrateTool.md](docs/MigrateTool.md) for the full sequence diagram, the ownership-token rationale,
+the failure-marker mechanism, and a worked 3-node example.
 
 ## Troubleshooting
 
@@ -195,6 +199,15 @@ full sequence diagram, the ownership-token rationale, and a worked 3-node exampl
 - Another instance is already migrating; wait or restart it
 - Check Redis connectivity from all instances
 - Verify Redis is not under memory pressure
+
+### Migration fails and stays failed on every restart
+- A task genuinely failed on some instance; that instance turned the lock into a permanent `:FAILED`
+  marker instead of releasing it (see "Distributed Locking" above), so every instance - including
+  future restarts - will keep failing to start as long as `redisClusterPartitioningEnabled=true`.
+- Check the logs of whichever instance originally failed (search for "lock left in place as a
+  permanent failure marker") to find and fix the root cause.
+- Once fixed, manually delete the lock key (`redis-cli DEL rest-storage:migration:lock`) before
+  restarting - it will never expire or clear itself.
 
 ### Keys not found after migration
 - Verify migration completed successfully (no errors in logs)
@@ -221,7 +234,9 @@ The migration lock key is: `rest-storage:migration:lock`
 
 - Stored in same Redis instance as application data
 - No authentication added (uses existing Redis auth)
-- TTL prevents permanent locks from stalled instances
+- TTL prevents permanent locks from stalled instances *while the migration is still running or
+  succeeded*; a genuinely failed migration turns the lock into a permanent (non-expiring) failure
+  marker on purpose - see "Distributed Locking" above and [docs/MigrateTool.md](docs/MigrateTool.md)
 - Consider ACLs in Redis 6+ to restrict access
 
 ## See Also

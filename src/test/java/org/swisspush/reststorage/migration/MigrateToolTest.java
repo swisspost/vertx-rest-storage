@@ -138,20 +138,6 @@ public class MigrateToolTest {
     }
 
     @Test
-    public void failingTaskFailsMigrationAndStillReleasesLock(TestContext context) {
-        List<String> executionOrder = Collections.synchronizedList(new ArrayList<>());
-        MigrateTool tool = new MigrateTool(vertx, redisProvider, "instance-1")
-                .addTask(recordingTask("before", executionOrder))
-                .addTask(failingTask("boom"))
-                .addTask(recordingTask("after", executionOrder));
-
-        context.assertFalse(await(context, tool.start()), "a task returning false must fail the migration");
-        // The task after the failing one must not have run.
-        context.assertEquals(Collections.singletonList("before"), new ArrayList<>(executionOrder));
-        context.assertFalse(jedis.exists(MIGRATION_LOCK_KEY), "lock must be released even when a task fails");
-    }
-
-    @Test
     public void secondInstanceWaitsInsteadOfRerunningTasks(TestContext context) {
         AtomicInteger executions = new AtomicInteger();
         Task slowTask = new Task() {
@@ -221,6 +207,65 @@ public class MigrateToolTest {
                 "migration result must not be trusted once lock ownership was lost mid-run");
         context.assertEquals(foreignToken, jedis.get(MIGRATION_LOCK_KEY),
                 "the other instance's lock (different token) must survive both our refresh and release");
+    }
+
+    @Test
+    public void failingTaskFailsMigrationAndLeavesLockAsPermanentFailureMarker(TestContext context) {
+        List<String> executionOrder = Collections.synchronizedList(new ArrayList<>());
+        MigrateTool tool = new MigrateTool(vertx, redisProvider, "instance-1")
+                .addTask(recordingTask("before", executionOrder))
+                .addTask(failingTask("boom"))
+                .addTask(recordingTask("after", executionOrder));
+
+        context.assertFalse(await(context, tool.start()), "a task returning false must fail the migration");
+        // The task after the failing one must not have run.
+        context.assertEquals(Collections.singletonList("before"), new ArrayList<>(executionOrder));
+        // The lock must be left in place (never released/expired) as a permanent failure marker, so
+        // any instance waiting on it can tell the difference between "still running" and "failed" -
+        // instead of a normal release/expiry being mistaken for a successfully completed migration.
+        context.assertTrue(jedis.exists(MIGRATION_LOCK_KEY),
+                "lock must NOT be released when a task fails - it becomes a permanent failure marker instead");
+        context.assertTrue(jedis.get(MIGRATION_LOCK_KEY).endsWith(":FAILED"),
+                "lock value must be marked as failed");
+        context.assertEquals(-1L, jedis.ttl(MIGRATION_LOCK_KEY),
+                "the failure marker must have no TTL - it must never expire on its own");
+    }
+
+    @Test
+    public void waitingInstanceAlsoFailsWhenTheLockOwnersTaskFailed(TestContext context) {
+        // instance-a runs a task that fails; instance-b was merely waiting on the lock. Both must
+        // fail - instance-b must not mistake the (now permanent) failure marker for a completed
+        // migration just because it's a lock key it can no longer acquire.
+        MigrateTool toolA = new MigrateTool(vertx, redisProvider, "instance-a").addTask(failingTask("boom"));
+        Task slowTask = new Task() {
+            @Override
+            public String getTaskKey() {
+                return "slow";
+            }
+
+            @Override
+            public Future<Boolean> run() {
+                Promise<Boolean> promise = Promise.promise();
+                vertx.setTimer(1_000, id -> promise.complete(true));
+                return promise.future();
+            }
+        };
+        MigrateTool toolB = new MigrateTool(vertx, redisProvider, "instance-b").addTask(slowTask);
+
+        Async async = context.async(2);
+        toolA.start().onComplete(ar -> {
+            context.assertTrue(ar.failed());
+            async.countDown();
+        });
+        // Give instance-a a brief head start so it wins the SET NX race deterministically.
+        vertx.setTimer(100, id -> toolB.start().onComplete(ar -> {
+            context.assertTrue(ar.failed(),
+                    "a waiting instance must fail too once it observes the lock's permanent failure marker");
+            async.countDown();
+        }));
+        async.awaitSuccess(30_000);
+
+        context.assertTrue(jedis.exists(MIGRATION_LOCK_KEY), "failure marker must still be present afterwards");
     }
 
     /** Wraps a real {@link RedisProvider}, letting the first {@code allowedCalls} calls through and failing every

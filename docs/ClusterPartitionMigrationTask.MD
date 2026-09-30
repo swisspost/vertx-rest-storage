@@ -105,11 +105,22 @@ sequenceDiagram
             Task->>Redis: SET DONE_KEY <timestamp>
             Task-->>MT: true
         end
-        MT->>Redis: EVAL release script (DEL only if lock still holds our token)
+        alt task succeeded
+            MT->>Redis: EVAL release script (DEL only if lock still holds our token)
+            MT-->>App: complete
+        else task failed
+            MT->>Redis: EVAL mark-failed script (SET lock token+":FAILED", no TTL, only if still ours)
+            MT-->>App: fail
+        end
     else lock held elsewhere
-        MT->>Redis: poll EXISTS migration lock every 2s
-        Redis-->>MT: lock gone
-        MT-->>App: complete (no task run locally)
+        MT->>Redis: poll GET migration lock every 2s
+        alt lock gone
+            Redis-->>MT: nil
+            MT-->>App: complete (no task run locally)
+        else lock marked failed
+            Redis-->>MT: "<token>:FAILED"
+            MT-->>App: fail (does not proceed as if migration succeeded)
+        end
     end
 ```
 
@@ -118,7 +129,11 @@ proceeds once it's released. The lock's TTL is refreshed every 2s for as long as
 compare-and-swap that only extends the TTL while the lock still holds this instance's own token - see
 [MigrateTool.md](MigrateTool.md#key-layout) for the full ownership-token rationale and what happens if a
 long stall causes ownership to be lost mid-run (the migration result is then treated as untrustworthy
-rather than silently reported as successful).
+rather than silently reported as successful). If the task genuinely fails, the lock is turned into a
+permanent (non-expiring) failure marker instead of being released, so every waiting instance fails too
+rather than mistaking the failure for a completed migration - see
+[MigrateTool.md](MigrateTool.md#key-layout) for the failure-marker mechanism and the manual recovery step
+it requires.
 
 ## See also
 

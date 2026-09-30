@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -63,6 +64,7 @@ public class MigrateToolTest {
 
     /** A task that records its execution order into {@code log} and then succeeds. */
     private static Task recordingTask(String key, List<String> log) {
+        AtomicBoolean completed = new AtomicBoolean(false);
         return new Task() {
             @Override
             public String getTaskKey() {
@@ -72,7 +74,13 @@ public class MigrateToolTest {
             @Override
             public Future<Boolean> run() {
                 log.add(key);
+                completed.set(true);
                 return Future.succeededFuture(true);
+            }
+
+            @Override
+            public Future<Boolean> isDone() {
+                return Future.succeededFuture(completed.get());
             }
         };
     }
@@ -86,6 +94,11 @@ public class MigrateToolTest {
 
             @Override
             public Future<Boolean> run() {
+                return Future.succeededFuture(false);
+            }
+
+            @Override
+            public Future<Boolean> isDone() {
                 return Future.succeededFuture(false);
             }
         };
@@ -140,6 +153,7 @@ public class MigrateToolTest {
     @Test
     public void secondInstanceWaitsInsteadOfRerunningTasks(TestContext context) {
         AtomicInteger executions = new AtomicInteger();
+        AtomicBoolean completed = new AtomicBoolean(false);
         Task slowTask = new Task() {
             @Override
             public String getTaskKey() {
@@ -150,8 +164,16 @@ public class MigrateToolTest {
             public Future<Boolean> run() {
                 executions.incrementAndGet();
                 Promise<Boolean> promise = Promise.promise();
-                vertx.setTimer(1_000, id -> promise.complete(true));
+                vertx.setTimer(1_000, id -> {
+                    completed.set(true);
+                    promise.complete(true);
+                });
                 return promise.future();
+            }
+
+            @Override
+            public Future<Boolean> isDone() {
+                return Future.succeededFuture(completed.get());
             }
         };
 
@@ -172,6 +194,28 @@ public class MigrateToolTest {
         context.assertEquals(1, executions.get(),
                 "only the lock holder may run the task; the other instance must just wait");
         context.assertFalse(jedis.exists(MIGRATION_LOCK_KEY));
+    }
+
+    @Test
+    public void waitingInstanceDoesNotMistakeALockThatExpiredAfterAHardCrashForSuccess(TestContext context) {
+        // Regression test: if the lock-holding instance crashes hard (e.g. OOM-killed) mid-task rather
+        // than failing a task cleanly, no ":FAILED" marker is ever written and the lock simply expires
+        // via its TTL - by lock state alone this is indistinguishable from a normal release after
+        // success. A waiting instance must not trust "lock gone" alone; it must verify the task's own
+        // completion flag (Task#isDone) before declaring success.
+        jedis.set(MIGRATION_LOCK_KEY, "crashed-instance:some-token", redis.clients.jedis.params.SetParams.setParams().nx().px(30_000));
+
+        Task neverCompletedTask = failingTask("never-completed");
+        MigrateTool waitingTool = new MigrateTool(vertx, redisProvider, "instance-waiting")
+                .addTask(neverCompletedTask);
+
+        // Simulate the crashed instance's lock expiring (TTL running out) without ever having
+        // completed the task or written a :FAILED marker - i.e. the lock simply disappears.
+        vertx.setTimer(500, id -> jedis.del(MIGRATION_LOCK_KEY));
+
+        context.assertFalse(await(context, waitingTool.start()),
+                "a lock that disappeared without the task ever reporting completion must not be mistaken "
+                        + "for a successful migration");
     }
 
     @Test
@@ -198,6 +242,11 @@ public class MigrateToolTest {
                 });
                 vertx.setTimer(3_500, id -> promise.complete(true));
                 return promise.future();
+            }
+
+            @Override
+            public Future<Boolean> isDone() {
+                return Future.succeededFuture(false);
             }
         };
 
@@ -248,6 +297,11 @@ public class MigrateToolTest {
                 Promise<Boolean> promise = Promise.promise();
                 vertx.setTimer(1_000, id -> promise.complete(true));
                 return promise.future();
+            }
+
+            @Override
+            public Future<Boolean> isDone() {
+                return Future.succeededFuture(false);
             }
         };
         MigrateTool toolB = new MigrateTool(vertx, redisProvider, "instance-b").addTask(slowTask);
@@ -301,6 +355,11 @@ public class MigrateToolTest {
                 vertx.setTimer(11_000, id -> promise.complete(true));
                 return promise.future();
             }
+
+            @Override
+            public Future<Boolean> isDone() {
+                return Future.succeededFuture(false);
+            }
         };
 
         // Allow exactly the acquireLock() call through, then fail every subsequent redis() call - i.e.
@@ -346,6 +405,7 @@ public class MigrateToolTest {
 
     @Test
     public void failsWhenPollingForOtherInstancesMigrationCompletionFails(TestContext context) {
+        AtomicBoolean completed = new AtomicBoolean(false);
         Task slowTask = new Task() {
             @Override
             public String getTaskKey() {
@@ -355,8 +415,16 @@ public class MigrateToolTest {
             @Override
             public Future<Boolean> run() {
                 Promise<Boolean> promise = Promise.promise();
-                vertx.setTimer(3_000, id -> promise.complete(true));
+                vertx.setTimer(3_000, id -> {
+                    completed.set(true);
+                    promise.complete(true);
+                });
                 return promise.future();
+            }
+
+            @Override
+            public Future<Boolean> isDone() {
+                return Future.succeededFuture(completed.get());
             }
         };
 

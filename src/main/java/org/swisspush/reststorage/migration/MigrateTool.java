@@ -432,9 +432,12 @@ public class MigrateTool {
 
                 String value = getResult.result() == null ? null : getResult.result().toString();
                 if (value == null) {
-                    // Lock released, migration complete
-                    log.debug("Lock key no longer exists, migration complete (instanceId:{})", instanceId);
-                    promise.complete();
+                    // Lock gone. This alone is NOT proof of a successful migration: if the lock-holding
+                    // instance crashed hard (e.g. OOM-killed) mid-task rather than failing a task
+                    // cleanly, no :FAILED marker is ever written and the lock simply expires via its
+                    // TTL - indistinguishable, by lock state alone, from a normal release after
+                    // success. Verify every task's own completion flag before trusting this.
+                    verifyAllTasksActuallyCompleted(promise);
                 } else if (value.endsWith(LOCK_FAILED_MARKER_SUFFIX)) {
                     log.error("Migration failed on the instance that held the lock (instanceId:{}); lock marker "
                             + "indicates failure, not proceeding as if migration succeeded", instanceId);
@@ -446,6 +449,44 @@ public class MigrateTool {
                     vertx.setTimer(MIGRATION_LOCK_REFRESH_MS, tid -> pollLockKey(promise));
                 }
             });
+        });
+    }
+
+    /**
+     * Called once a waiting instance observes the migration lock has disappeared. Confirms every
+     * registered task's own completion flag (see {@link Task#isDone()}) is actually set before
+     * declaring success - closing the gap where a lock-holding instance crashed hard mid-task (no
+     * {@code :FAILED} marker written, lock merely expired) and a waiting instance would otherwise
+     * mistake that for a completed migration and proceed against partially-migrated data.
+     */
+    private void verifyAllTasksActuallyCompleted(Promise<Void> promise) {
+        verifyTaskCompleted(0, promise);
+    }
+
+    private void verifyTaskCompleted(int index, Promise<Void> promise) {
+        if (index >= tasks.size()) {
+            log.debug("Lock key no longer exists and every task's completion flag is set, migration complete "
+                    + "(instanceId:{})", instanceId);
+            promise.complete();
+            return;
+        }
+        Task task = tasks.get(index);
+        task.isDone().onComplete(ar -> {
+            if (ar.failed()) {
+                log.error("Failed to verify task '{}' completion after the migration lock disappeared "
+                        + "(instanceId:{})", task.getTaskKey(), instanceId, ar.cause());
+                promise.fail(ar.cause());
+                return;
+            }
+            if (!Boolean.TRUE.equals(ar.result())) {
+                log.error("Migration lock disappeared but task '{}' never reported completion (instanceId:{}) - "
+                        + "the lock-holding instance likely crashed mid-migration rather than finishing or "
+                        + "cleanly failing; not proceeding as if migration succeeded", task.getTaskKey(), instanceId);
+                promise.fail("Migration lock disappeared without task '" + task.getTaskKey()
+                        + "' ever completing - the lock owner likely crashed mid-migration");
+                return;
+            }
+            verifyTaskCompleted(index + 1, promise);
         });
     }
 

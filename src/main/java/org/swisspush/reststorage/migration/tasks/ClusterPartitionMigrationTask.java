@@ -178,6 +178,11 @@ public class ClusterPartitionMigrationTask implements Task {
                 .map(resp -> resp != null && resp.toInteger() > 0);
     }
 
+    @Override
+    public Future<Boolean> isDone() {
+        return redisProvider.redis().compose(this::isAlreadyDone);
+    }
+
     /**
      * Permanently marks this task as done so future runs (see {@link #isAlreadyDone}) skip it.
      */

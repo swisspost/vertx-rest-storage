@@ -339,6 +339,92 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void deleteReportsErrorInsteadOfSilentSuccessWhenEvalshaFailsWithGenuineRedisError(TestContext context) {
+        // A non-NOSCRIPT evalsha failure (e.g. a real Redis/Lua error, or CROSSSLOT) must be surfaced as
+        // an error, not fall through to a bare `new Resource()` (which defaults to exists=true, i.e.
+        // reported as a successful deletion) - this is the safety net the root-DELETE halt-on-error fix
+        // (see deleteRootStopsAtFirstRejectedPartitionInsteadOfDestroyingTheRest) depends on.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok")) {
+            @Override
+            public Future<Response> send(Command command, String... args) {
+                if (command == Command.EVALSHA) {
+                    invocations.add(new Invocation(command, Arrays.asList(args)));
+                    return Future.failedFuture(new RuntimeException("simulated redis error"));
+                }
+                return super.send(command, args);
+            }
+        };
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/server/test", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, false, resource -> {
+            context.assertTrue(resource.error,
+                    "a genuine (non-NOSCRIPT) evalsha failure must be reported as an error, not silent success");
+            context.assertEquals("redisAPI.evalsha() failed", resource.errorMessage);
+            // Only one attempt must have been made - a genuine error must not be treated as NOSCRIPT and
+            // trigger a script-reload retry loop.
+            context.assertEquals(1, api.byCommand(Command.EVALSHA).size());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathPrunesRegistryOnSuccessWhenPartitioningEnabled(TestContext context) {
+        // Unlike a root DELETE (deleteAllPartitions), a direct DELETE targeting exactly a partition's
+        // top-level path (e.g. "/project") never went through deletePartitionsSequentially, so it must
+        // prune the partition registry itself once the whole partition is confirmed deleted - otherwise
+        // the tag would stay registered forever, forcing every future root GET/DELETE/cleanup to keep
+        // iterating over a now-nonexistent partition.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("deleted"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertFalse(resource.error);
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(1, sremCalls.size());
+            context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "project"), sremCalls.get(0).args);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteOnNestedPathDoesNotPruneRegistryEvenOnSuccessWhenPartitioningEnabled(TestContext context) {
+        // A DELETE on a path nested inside a partition (not the partition's own top-level segment) only
+        // ever removes part of that partition's data - the partition itself may still have other data
+        // left, so its tag must stay registered.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("deleted"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/server/test", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a nested (non-top-level) delete must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenRejected(TestContext context) {
+        // A rejected/errored delete must not be mistaken for a successful, whole-partition removal.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk(org.swisspush.reststorage.util.LockMode.REJECT.text()));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.rejected);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a rejected delete must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
     public void putRegistersPartitionTagOnSuccessWhenPartitioningEnabled(TestContext context) {
         Async async = context.async();
         FakeRedisAPI api = new FakeRedisAPI(inv -> {

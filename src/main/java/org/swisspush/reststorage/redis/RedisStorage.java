@@ -1156,7 +1156,31 @@ public class RedisStorage implements Storage {
                 lockMode.text(),
                 lockExpireInMillis
         );
-        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(deleteScript, new Delete(deleteScript, keys, arguments, handler), 0);
+        Handler<Resource> deleteHandler = handler;
+        if (partitioningEnabled && partition.getTag() != null && partition.getKey().endsWith("}")) {
+            // This DELETE targets exactly a partition's top-level segment (no further path suffix on the
+            // tagged key) - unlike a root DELETE (deleteAllPartitions/deletePartitionsSequentially), a
+            // direct DELETE like this one never otherwise prunes the partition registry, so a fully
+            // deleted partition's tag would stay registered forever, forcing every future root
+            // GET/DELETE/cleanup to keep iterating over it needlessly.
+            String tag = partition.getTag();
+            deleteHandler = result -> {
+                if (result.exists && !result.error && !result.rejected) {
+                    redisProvider.redis().onComplete(regEv -> {
+                        if (regEv.succeeded()) {
+                            regEv.result().srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
+                                if (sremEv.failed()) {
+                                    log.warn("Could not remove partition tag '{}' from registry in storage {}",
+                                            tag, storageIdentifier, sremEv.cause());
+                                }
+                            });
+                        }
+                    });
+                }
+                handler.handle(result);
+            };
+        }
+        reloadScriptIfLoglevelChangedAndExecuteRedisCommand(deleteScript, new Delete(deleteScript, keys, arguments, deleteHandler), 0);
     }
 
     /**
@@ -1403,7 +1427,8 @@ public class RedisStorage implements Storage {
                 redisAPI.evalsha(args, shaEv -> {
                     if( shaEv.failed() ){
                         Throwable ex = shaEv.cause();
-                        if (ex.getMessage().startsWith("NOSCRIPT")) {
+                        String message = ex.getMessage();
+                        if (message != null && message.startsWith("NOSCRIPT")) {
                             log.warn("delete script in storage {} couldn't be found, reload it", storageIdentifier, ex);
                             log.warn("amount the script in storage {} got loaded: {}", storageIdentifier, executionCounter);
                             if (executionCounter > 10) {
@@ -1411,6 +1436,17 @@ public class RedisStorage implements Storage {
                             } else {
                                 luaScripts.get(script).loadLuaScript(new Delete(script, keys, arguments, handler), executionCounter);
                             }
+                            return;
+                        }
+                        if (partitioningEnabled) {
+                            // Only surface this as an error for the cluster-partitioning path (this
+                            // branch's scope). In legacy/non-partitioned mode a pre-existing, unrelated
+                            // del.lua bug can make evalsha fail here even though the deletion's redis.call
+                            // side effects already applied; fixing that is out of scope for this branch,
+                            // so we deliberately preserve the old fall-through-to-success behavior below.
+                            log.error("DELETE request in storage {} failed with message", storageIdentifier,
+                                    exceptionFactory.newException("redisAPI.evalsha() failed", ex));
+                            error(handler, "redisAPI.evalsha() failed");
                             return;
                         }
                     }

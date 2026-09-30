@@ -281,6 +281,38 @@ public class MigrateToolTest {
     }
 
     @Test
+    public void sustainedRedisConnectivityLossDuringRefreshIsTreatedAsLockOwnershipLoss(TestContext context) {
+        // A refresh tick that merely fails to reach the CAS check (Redis connection down, or the eval
+        // call itself failing) must not be silently ignored forever: if enough consecutive ticks fail
+        // to span the lock's TTL window, the lock may well have already expired on Redis's side and
+        // been re-acquired by someone else - this must be treated the same as a CAS-detected ownership
+        // loss (i.e. the migration result must not be trusted), not left undetected.
+        // Refresh interval is 2s and the lock TTL is 10s, so 5 consecutive failed ticks (>=10s) must
+        // trip detection; run the task a bit longer than that to give it a chance to fire.
+        Task longRunningTask = new Task() {
+            @Override
+            public String getTaskKey() {
+                return "long-running";
+            }
+
+            @Override
+            public Future<Boolean> run() {
+                Promise<Boolean> promise = Promise.promise();
+                vertx.setTimer(11_000, id -> promise.complete(true));
+                return promise.future();
+            }
+        };
+
+        // Allow exactly the acquireLock() call through, then fail every subsequent redis() call - i.e.
+        // every refresh tick from then on.
+        RedisProvider flakyProvider = failingAfter(redisProvider, 1);
+        MigrateTool tool = new MigrateTool(vertx, flakyProvider, "instance-a").addTask(longRunningTask);
+
+        context.assertFalse(await(context, tool.start()),
+                "sustained refresh failures spanning the lock TTL must not be reported as a trustworthy success");
+    }
+
+    @Test
     public void failsWhenPollingForOtherInstancesMigrationCompletionFails(TestContext context) {
         Task slowTask = new Task() {
             @Override

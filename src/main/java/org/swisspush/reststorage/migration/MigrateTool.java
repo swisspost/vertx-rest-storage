@@ -90,6 +90,14 @@ public class MigrateTool {
     // it may already belong to another instance - and the migration result should be treated as
     // unsafe/failed rather than successful.
     private volatile boolean lockOwnershipLost = false;
+    // Counts consecutive refresh ticks that failed to even reach/execute the CAS check (Redis
+    // connection failure, or the eval call itself failing) - as opposed to a successful CAS check
+    // that found the lock content changed. Reset to 0 on any tick that completes the CAS check
+    // (regardless of outcome). Used to detect sustained connectivity loss spanning the lock TTL,
+    // which must be treated the same as a detected ownership loss (see startRefreshTimer): otherwise
+    // the lock can silently expire and be re-acquired by another instance while this instance keeps
+    // running under the false assumption of exclusive ownership.
+    private volatile int consecutiveRefreshFailures = 0;
 
     /**
      * Creates a new MigrateTool instance.
@@ -141,6 +149,7 @@ public class MigrateTool {
                 // Lock acquired - run migration tasks
                 log.info("Migration lock acquired, starting tasks (instanceId:{})", instanceId);
                 lockOwnershipLost = false;
+                consecutiveRefreshFailures = 0;
                 startRefreshTimer();
                 runTasksSequentially()
                     .onComplete(runResult -> {
@@ -410,10 +419,14 @@ public class MigrateTool {
      * further ticks would otherwise refresh a different instance's lock.
      */
     private void startRefreshTimer() {
+        // Ownership must be considered lost once enough consecutive ticks have failed to even reach
+        // the CAS check that the lock's TTL could plausibly have already expired on Redis's side.
+        final int maxConsecutiveFailures = Math.max(1, MIGRATION_LOCK_TIMEOUT_MS / MIGRATION_LOCK_REFRESH_MS);
         refreshTimerId = vertx.setPeriodic(MIGRATION_LOCK_REFRESH_MS, tid -> {
             redisProvider.redis().onComplete(ar -> {
                 if (ar.failed()) {
                     log.error("Redis connection failed during lock refresh (instanceId:{})", instanceId, ar.cause());
+                    onRefreshCheckFailedToRun(maxConsecutiveFailures);
                     return;
                 }
                 
@@ -428,8 +441,10 @@ public class MigrateTool {
                     evalResult -> {
                         if (evalResult.failed()) {
                             log.warn("Failed to refresh migration lock (instanceId:{})", instanceId, evalResult.cause());
+                            onRefreshCheckFailedToRun(maxConsecutiveFailures);
                             return;
                         }
+                        consecutiveRefreshFailures = 0;
                         boolean refreshed = evalResult.result() != null && evalResult.result().toInteger() != 0;
                         if (refreshed) {
                             log.debug("Migration lock TTL refreshed (instanceId:{})", instanceId);
@@ -444,6 +459,24 @@ public class MigrateTool {
             });
         });
         log.debug("Migration lock refresh timer started (instanceId:{})", instanceId);
+    }
+
+    /**
+     * Called whenever a refresh tick fails before it could even complete the CAS check (Redis
+     * connection failure, or the eval call itself failing). Tracks consecutive such failures and,
+     * once enough of them have accumulated to span the lock's TTL window, treats this the same as a
+     * CAS-detected ownership loss: by then the lock may well have already expired on Redis's side and
+     * been re-acquired by another instance, so continuing to run under the assumption of exclusive
+     * ownership would be unsafe.
+     */
+    private void onRefreshCheckFailedToRun(int maxConsecutiveFailures) {
+        int failures = ++consecutiveRefreshFailures;
+        if (failures >= maxConsecutiveFailures) {
+            log.error("Migration lock refresh failed {} consecutive times (instanceId:{}); assuming the lock's "
+                    + "TTL has expired and ownership may be lost. Stopping refresh timer.", failures, instanceId);
+            lockOwnershipLost = true;
+            stopRefreshTimer();
+        }
     }
 
     /**

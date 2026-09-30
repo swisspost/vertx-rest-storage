@@ -40,11 +40,17 @@ public final class PartitionContext {
     private final String key;
     private final String expirableSetKey;
     private final String tag;
+    private final boolean topLevel;
 
     public PartitionContext(String key, String expirableSetKey, String tag) {
+        this(key, expirableSetKey, tag, false);
+    }
+
+    public PartitionContext(String key, String expirableSetKey, String tag, boolean topLevel) {
         this.key = key;
         this.expirableSetKey = expirableSetKey;
         this.tag = tag;
+        this.topLevel = topLevel;
     }
 
     /**
@@ -67,6 +73,22 @@ public final class PartitionContext {
      */
     public String getTag() {
         return tag;
+    }
+
+    /**
+     * True when this operation's key is targeting exactly a partition's top-level segment - i.e. the
+     * tagged key is {@code <leading separators>{tag}} with no further path suffix - as opposed to some
+     * deeper resource nested under that partition. Only meaningful when {@link #getTag()} is non-null;
+     * always {@code false} when partitioning is disabled or the path has no partition-able segment.
+     *
+     * <p>This is a structural check (based on where the raw first path segment actually ends in the
+     * original encoded path), not a string heuristic on the resulting key - unlike e.g. checking
+     * whether {@link #getKey()} ends with {@code '}'}, which would wrongly also match ordinary nested
+     * resources whose own last path segment happens to literally end in {@code '}'}
+     * (e.g. {@code /project/name}}).</p>
+     */
+    public boolean isTopLevel() {
+        return topLevel;
     }
 
     /**
@@ -150,6 +172,40 @@ public final class PartitionContext {
     }
 
     /**
+     * Inverse of {@link #escapeBraces(String)}: recovers the original raw path segment from an escaped
+     * partition tag (e.g. as stored in the partition registry), so it can be displayed as the correct
+     * resource name (e.g. in a root collection listing) instead of the internal escaped form.
+     *
+     * <p>Package-private (rather than private) so {@code RedisStorage} can use it directly when turning
+     * a registered partition tag back into the resource name to display, without duplicating the escape
+     * scheme's decoding logic.</p>
+     */
+    static String unescapeBraces(String tag) {
+        StringBuilder sb = new StringBuilder(tag.length());
+        for (int i = 0; i < tag.length(); i++) {
+            char c = tag.charAt(i);
+            if (c == ESCAPE_MARKER && i + 1 < tag.length()) {
+                char next = tag.charAt(i + 1);
+                if (next == '0') {
+                    sb.append(ESCAPE_MARKER);
+                    i++;
+                    continue;
+                } else if (next == '1') {
+                    sb.append('{');
+                    i++;
+                    continue;
+                } else if (next == '2') {
+                    sb.append('}');
+                    i++;
+                    continue;
+                }
+            }
+            sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    /**
      * True when {@code segment} starts with {@code '{'}, ends with {@code '}'}, has no other
      * {@code '{'}/{@code '}'} in between, and has non-empty inner content - i.e. it is already a
      * single, well-formed, non-empty Redis Cluster hash tag rather than raw content that merely
@@ -209,6 +265,7 @@ public final class PartitionContext {
         String taggedKey = encodedPath.substring(0, leadingSeps) + "{" + tag + "}"
                 + encodedPath.substring(segmentEnd);
         String taggedExpirableSet = expirableSet + ":{" + tag + "}";
-        return new PartitionContext(taggedKey, taggedExpirableSet, tag);
+        boolean topLevel = segmentEnd == encodedPath.length();
+        return new PartitionContext(taggedKey, taggedExpirableSet, tag, topLevel);
     }
 }

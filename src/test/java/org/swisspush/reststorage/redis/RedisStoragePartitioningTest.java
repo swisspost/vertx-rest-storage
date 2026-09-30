@@ -198,6 +198,29 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void unescapeBracesIsTheExactInverseOfEscapeBracesForOrdinaryRawSegments() throws Exception {
+        // unescapeBraces() is used to recover the original path segment name (e.g. for display in a
+        // root collection listing) from a tag produced by escapeBraces() via derivePartitionTag(). For
+        // any segment that actually went through escapeBraces() (i.e. wasn't itself already shaped like
+        // a non-empty {tag}, see derivePartitionTagPassesThroughAlreadyTaggedSegment), round-tripping
+        // through escape then unescape must reproduce the exact original segment.
+        assertRoundTrips("foo");
+        assertRoundTrips("fo{o}");
+        assertRoundTrips("{}");
+        assertRoundTrips("fo\u00A61o");
+        assertRoundTrips("fo{o");
+        assertRoundTrips("weird\u00A6\u00A6}{}}");
+    }
+
+    private static void assertRoundTrips(String rawSegment) throws Exception {
+        Method escapeBraces = PartitionContext.class.getDeclaredMethod("escapeBraces", String.class);
+        escapeBraces.setAccessible(true);
+        String escaped = (String) escapeBraces.invoke(null, rawSegment);
+        String roundTripped = PartitionContext.unescapeBraces(escaped);
+        assertEquals(rawSegment, roundTripped);
+    }
+
+    @Test
     public void forPathDisabledLeavesKeyAndExpirableSetUnchanged() {
         PartitionContext ctx = PartitionContext.forPath(":project:server:test", false, "rest-storage:expirable");
         assertEquals(":project:server:test", ctx.getKey());
@@ -441,6 +464,48 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void deleteOnNestedPathWhoseLastSegmentEndsInClosingBraceDoesNotPruneRegistry(TestContext context) {
+        // Regression test: pruning must be decided structurally (PartitionContext#isTopLevel), not via
+        // a getKey().endsWith("}") string heuristic - otherwise an ordinary nested resource whose own
+        // last path segment happens to literally end in '}' (e.g. "/project/name}") would be
+        // mis-detected as "the whole 'project' partition was deleted", wrongly SREM-ing the still-live
+        // "project" tag out of the registry while the rest of its data remains present.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("deleted"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/name}", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a nested delete whose last segment ends in '}' must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathPrunesRegistryOnNotFoundWhenPartitioningEnabled(TestContext context) {
+        // Self-healing: if a direct DELETE targets exactly a partition's top-level path but the
+        // underlying data is already gone (e.g. previously emptied via a nested delete, which does not
+        // itself prune the registry - see deleteOnNestedPathDoesNotPruneRegistryEvenOnSuccessWhenPartitioningEnabled),
+        // the stale tag must still be pruned, mirroring deletePartitionsSequentially's same self-healing
+        // behavior for the root-scatter DELETE path.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertFalse(resource.exists);
+            context.assertFalse(resource.error);
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(1, sremCalls.size());
+            context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "project"), sremCalls.get(0).args);
+            async.complete();
+        });
+    }
+
+    @Test
     public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenRejected(TestContext context) {
         // A rejected/errored delete must not be mistaken for a successful, whole-partition removal.
         Async async = context.async();
@@ -650,6 +715,39 @@ public class RedisStoragePartitioningTest {
                     context.fail("unexpected item: " + item.name);
                 }
             }
+            async.complete();
+        });
+    }
+
+    @Test
+    public void getRootUnescapesPartitionTagBackToOriginalNameWhenListingChildren(TestContext context) {
+        // Regression test: the partition registry stores the *escaped* tag (see
+        // PartitionContext#escapeBraces), but a root GET listing must show clients the original,
+        // unescaped path segment name they created - not PartitionContext's internal encoded form.
+        Async async = context.async();
+        // "foo{bar}" escapes to "foo¦1bar¦2" (see PartitionContext#escapeBraces).
+        String escapedTag = "foo\u00A61bar\u00A62";
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk(escapedTag));
+            }
+            if (inv.command == Command.EXISTS) {
+                String key = inv.args.get(0);
+                if (("rest-storage:resources:{" + escapedTag + "}").equals(key)) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/", null, 0, -1, resource -> {
+            context.assertTrue(resource instanceof org.swisspush.reststorage.CollectionResource);
+            List<Resource> items = ((org.swisspush.reststorage.CollectionResource) resource).items;
+            context.assertEquals(1, items.size());
+            context.assertEquals("foo{bar}", items.get(0).name,
+                    "root listing must show the original raw path segment, not the internal escaped tag");
             async.complete();
         });
     }

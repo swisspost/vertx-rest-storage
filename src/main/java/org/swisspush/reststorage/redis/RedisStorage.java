@@ -1165,15 +1165,19 @@ public class RedisStorage implements Storage {
                 lockExpireInMillis
         );
         Handler<Resource> deleteHandler = handler;
-        if (partitioningEnabled && partition.getTag() != null && partition.getKey().endsWith("}")) {
+        if (partitioningEnabled && partition.getTag() != null && partition.isTopLevel()) {
             // This DELETE targets exactly a partition's top-level segment (no further path suffix on the
             // tagged key) - unlike a root DELETE (deleteAllPartitions/deletePartitionsSequentially), a
             // direct DELETE like this one never otherwise prunes the partition registry, so a fully
             // deleted partition's tag would stay registered forever, forcing every future root
-            // GET/DELETE/cleanup to keep iterating over it needlessly.
+            // GET/DELETE/cleanup to keep iterating over it needlessly. Pruning also happens on a
+            // "notFound" outcome (not just "existed and got deleted"), so an already-empty partition
+            // (e.g. emptied earlier via a nested delete, see the accepted registry-pruning limitation
+            // on nested deletes) self-heals out of the registry the next time its top level is targeted
+            // directly - mirroring deletePartitionsSequentially's same self-healing behavior.
             String tag = partition.getTag();
             deleteHandler = result -> {
-                if (result.exists && !result.error && !result.rejected) {
+                if (!result.error && !result.rejected) {
                     redisProvider.redis().onComplete(regEv -> {
                         if (regEv.succeeded()) {
                             regEv.result().srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
@@ -1375,10 +1379,11 @@ public class RedisStorage implements Storage {
         }
         String tag = tags.get(index);
         String taggedKey = ":{" + tag + "}";
+        String displayName = PartitionContext.unescapeBraces(tag);
         redisAPI.exists(Collections.singletonList(redisResourcesPrefix + taggedKey), resourceExistsEv -> {
             if (isExists(resourceExistsEv)) {
                 DocumentResource d = new DocumentResource();
-                d.name = tag;
+                d.name = displayName;
                 acc.add(d);
                 resolveRootChildrenSequentially(redisAPI, tags, index + 1, acc, onDone);
                 return;
@@ -1386,7 +1391,7 @@ public class RedisStorage implements Storage {
             redisAPI.exists(Collections.singletonList(redisCollectionsPrefix + taggedKey), collectionExistsEv -> {
                 if (isExists(collectionExistsEv)) {
                     CollectionResource c = new CollectionResource();
-                    c.name = tag;
+                    c.name = displayName;
                     acc.add(c);
                 }
                 resolveRootChildrenSequentially(redisAPI, tags, index + 1, acc, onDone);

@@ -160,10 +160,24 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
-    public void derivePartitionTagStripsLiteralBraces() {
+    public void derivePartitionTagPassesThroughAlreadyTaggedSegment() {
+        // A segment that is already fully wrapped in a single hash tag (e.g. re-derived from a key
+        // ClusterPartitionMigrationTask already renamed, or re-visited via Redis SCAN's at-least-once
+        // guarantee) must be recognized and passed through unchanged - re-deriving the tag must be a
+        // true no-op, or every re-visit would wrap the key again and corrupt it.
         assertEquals("weird", PartitionContext.derivePartitionTag(":{weird}:server"));
-        // a segment consisting only of braces has nothing left -> null
+        // a segment consisting only of braces has nothing left -> null, same as root/empty
         assertNull(PartitionContext.derivePartitionTag(":{}:server"));
+    }
+
+    @Test
+    public void derivePartitionTagEscapesStrayLiteralBracesToAvoidCollisions() {
+        // "foo" and "fo{o}" must never collapse onto the same tag/key: the stray (not single-wrapping)
+        // braces in "fo{o}" are escaped, not stripped.
+        String plain = PartitionContext.derivePartitionTag(":foo:server");
+        String withStrayBraces = PartitionContext.derivePartitionTag(":fo{o}:server");
+        assertEquals("foo", plain);
+        assertNotEquals(plain, withStrayBraces);
     }
 
     @Test

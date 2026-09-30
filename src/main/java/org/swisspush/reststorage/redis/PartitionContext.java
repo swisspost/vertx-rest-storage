@@ -23,6 +23,17 @@ public final class PartitionContext {
     /** The path segment separator used by {@code RedisStorage.encodePath(String)}. */
     public static final String PATH_SEP = ":";
 
+    // Redis Cluster hash tags use the *first* '{' and the first following '}' in the key to
+    // determine the slot, so a raw path segment's own literal '{'/'}' characters cannot be embedded
+    // verbatim inside our synthetic hash tag - and must not simply be discarded either (two distinct
+    // segments differing only by such characters, e.g. "foo" and "fo{o}", would otherwise reduce to
+    // the identical tag "foo" and collide onto the very same Redis key, silently overwriting data).
+    // Instead they are escaped to reversible placeholder characters, one-for-one, following the same
+    // pattern used by ResourceNameUtil for ':'/';' - this keeps distinct raw segments distinct while
+    // still yielding a brace-free hash tag.
+    private static final String OPEN_BRACE_REPLACEMENT = "\u00A6";  // ¦
+    private static final String CLOSE_BRACE_REPLACEMENT = "\u00A4"; // ¤
+
     private final String key;
     private final String expirableSetKey;
     private final String tag;
@@ -59,6 +70,29 @@ public final class PartitionContext {
      * Derives the Redis Cluster partition tag from an already-encoded path (e.g. {@code :project:server:test})
      * by taking its first non-empty segment (e.g. {@code project}). Returns {@code null} when the path has
      * no segment to partition on (e.g. root).
+     *
+     * <p>Two distinct situations reach this method with a first segment that already looks like
+     * {@code {something}}:
+     * <ul>
+     *   <li>The segment is the result of a <i>previous</i> tagging pass resurfacing - e.g. a key
+     *       {@code ClusterPartitionMigrationTask} already renamed to {@code :{project}:...} coming back
+     *       around in the same {@code SCAN} (Redis's at-least-once guarantee). This <b>must</b> be
+     *       recognized and passed through unchanged (returning {@code project}, not a doubly-wrapped
+     *       tag), or every re-visit would wrap the key again, corrupting it.</li>
+     *   <li>The segment is genuinely raw, user-supplied path content that happens to itself be shaped
+     *       like {@code {something}} (nothing upstream of this class escapes {@code {}/{@code }}} in
+     *       resource paths). This is indistinguishable from the first case by construction, and is
+     *       therefore treated the same way (the tag becomes {@code something}) - meaning a raw segment
+     *       exactly of the form {@code {x}} and a raw segment {@code x} unavoidably collide onto the
+     *       same partition tag/key. This is a narrow, accepted limitation (see the field comment on
+     *       {@link #OPEN_BRACE_REPLACEMENT}); avoiding it entirely would require escaping literal
+     *       {@code {}/{@code }} in every resource path up front (in {@code RedisStorage.encodePath}),
+     *       which is a larger, separate change with its own backward-compatibility implications for
+     *       already-stored (non-cluster) keys.</li>
+     * </ul>
+     * Any other literal {@code {}/{@code }} characters - i.e. ones that do <i>not</i> single-wrap the
+     * whole segment - are escaped to reversible placeholder characters rather than discarded, so e.g.
+     * {@code foo} and {@code fo{o}} still reliably produce different tags.
      */
     public static String derivePartitionTag(String encodedPath) {
         String trimmed = encodedPath;
@@ -69,10 +103,33 @@ public final class PartitionContext {
             return null;
         }
         int idx = trimmed.indexOf(PATH_SEP);
-        String tag = idx == -1 ? trimmed : trimmed.substring(0, idx);
-        // Hash tag delimiters must not be part of the tag value itself
-        tag = tag.replace("{", "").replace("}", "");
-        return tag.isEmpty() ? null : tag;
+        String segment = idx == -1 ? trimmed : trimmed.substring(0, idx);
+        if (segment.isEmpty()) {
+            return null;
+        }
+        if (isSingleWrappedInBraces(segment)) {
+            // Already tagged (or raw content shaped exactly like a tag, see Javadoc) - reuse the inner
+            // content verbatim so re-deriving the tag a second time is a true no-op. An empty inner
+            // content ("{}") has nothing left to tag on, same as an empty/root path.
+            String inner = segment.substring(1, segment.length() - 1);
+            return inner.isEmpty() ? null : inner;
+        }
+        // Hash tag delimiters must not appear literally inside the tag value itself, but must not be
+        // discarded either - escape them instead (see field comments above).
+        return segment.replace("{", OPEN_BRACE_REPLACEMENT).replace("}", CLOSE_BRACE_REPLACEMENT);
+    }
+
+    /**
+     * True when {@code segment} starts with {@code '{'}, ends with {@code '}'}, and has no other
+     * {@code '{'}/{@code '}'} in between - i.e. it is already a single, well-formed Redis Cluster hash
+     * tag rather than raw content that merely contains stray brace characters.
+     */
+    private static boolean isSingleWrappedInBraces(String segment) {
+        if (segment.length() < 2 || segment.charAt(0) != '{' || segment.charAt(segment.length() - 1) != '}') {
+            return false;
+        }
+        String inner = segment.substring(1, segment.length() - 1);
+        return inner.indexOf('{') == -1 && inner.indexOf('}') == -1;
     }
 
     /**
@@ -111,8 +168,8 @@ public final class PartitionContext {
             leadingSeps += PATH_SEP.length();
         }
         // Locate the end of the raw first segment (as it appears in encodedPath) rather than relying
-        // on tag.length(), since derivePartitionTag() may have stripped literal '{'/'}' characters from
-        // it - using the stripped length here would compute the wrong substring offset and corrupt the path.
+        // on tag.length(): although the current escaping is length-preserving (1 char -> 1 char), that
+        // is an implementation detail of derivePartitionTag() this method must not depend on.
         int segmentEnd = encodedPath.indexOf(PATH_SEP, leadingSeps);
         if (segmentEnd == -1) {
             segmentEnd = encodedPath.length();

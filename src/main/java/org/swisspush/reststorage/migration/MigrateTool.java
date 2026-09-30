@@ -13,12 +13,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-
-import static java.lang.System.currentTimeMillis;
+import java.util.UUID;
 
 /**
  * Tool for coordinating and executing data migration tasks when enabling Redis Cluster partitioning.
  * Ensures only one migration runs at a time across cluster nodes using a distributed lock in Redis.
+ *
+ * <p><b>Lock safety:</b> the lock value is a random token generated on each acquisition, not just a
+ * timestamp. Both the periodic TTL refresh and the final release use a Lua compare-and-swap script
+ * that only mutates the lock if it still holds this instance's token. This prevents a stalled
+ * instance (e.g. after a long GC pause during which the lock's TTL expired and another instance
+ * acquired it) from refreshing or deleting a lock that has since legitimately become owned by a
+ * different instance. If the refresh timer ever detects lost ownership, it stops itself and
+ * {@link #start()}'s future fails, since the migration's exclusivity guarantee can no longer be
+ * trusted for the remainder of that run.
  * 
  * <p>Usage example:
  * <pre>
@@ -41,12 +49,36 @@ public class MigrateTool {
     private static final int MIGRATION_LOCK_TIMEOUT_MS = 10_000;     // 10 seconds
     private static final int MIGRATION_LOCK_REFRESH_MS = 2_000;      // 2 seconds
     private static final String MIGRATION_LOCK_KEY = "rest-storage:migration:lock";
-    
+
+    // Compare-and-swap scripts so a refresh/release only ever affects the lock this instance itself
+    // acquired (identified by ARGV[1], a per-acquisition random token) - never a lock some other
+    // instance has since acquired after ours expired (e.g. after a long GC pause).
+    private static final String REFRESH_LOCK_SCRIPT =
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('PEXPIRE', KEYS[1], ARGV[2]) " +
+            "else " +
+            "  return 0 " +
+            "end";
+    private static final String RELEASE_LOCK_SCRIPT =
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('DEL', KEYS[1]) " +
+            "else " +
+            "  return 0 " +
+            "end";
+
     private final String instanceId;
     private final RedisProvider redisProvider;
     private final Vertx vertx;
     private final List<Task> tasks = new ArrayList<>();
     private Long refreshTimerId = null;
+    // Random per-acquisition token (not just instanceId) so even two acquisitions by the very same
+    // instance (e.g. after a lost-and-reacquired lock) are never mistaken for one another.
+    private volatile String lockToken = null;
+    // Set by the refresh timer if it ever discovers the lock is no longer ours (lost ownership,
+    // e.g. TTL expired before a refresh could run). Once true, release must not touch the lock -
+    // it may already belong to another instance - and the migration result should be treated as
+    // unsafe/failed rather than successful.
+    private volatile boolean lockOwnershipLost = false;
 
     /**
      * Creates a new MigrateTool instance.
@@ -97,11 +129,18 @@ public class MigrateTool {
             if (ar.result()) {
                 // Lock acquired - run migration tasks
                 log.info("Migration lock acquired, starting tasks (instanceId:{})", instanceId);
+                lockOwnershipLost = false;
                 startRefreshTimer();
                 runTasksSequentially()
                     .onComplete(runResult -> {
                         releaseLock().onComplete(releaseResult -> {
-                            if (runResult.failed()) {
+                            if (lockOwnershipLost) {
+                                // The lock (and thus our exclusive right to run tasks) may have been
+                                // held by another instance for part of the run - the result cannot be
+                                // trusted as a safe, exclusive migration outcome.
+                                migratePromise.fail("Migration lock ownership was lost during task execution "
+                                        + "(instanceId:" + instanceId + "); result is not trustworthy");
+                            } else if (runResult.failed()) {
                                 migratePromise.fail(runResult.cause());
                             } else {
                                 migratePromise.complete();
@@ -122,7 +161,10 @@ public class MigrateTool {
     }
 
     /**
-     * Attempts to acquire the migration lock using SET NX PX.
+     * Attempts to acquire the migration lock using SET NX PX. The lock value is a random,
+     * per-acquisition token (see {@link #lockToken}) rather than just a timestamp, so later
+     * refresh/release calls can verify (via a Lua compare-and-swap) that they still own the lock
+     * before mutating it.
      * 
      * @return Future completed with true if lock was acquired, false if already held
      */
@@ -137,12 +179,12 @@ public class MigrateTool {
             }
             
             RedisAPI redisAPI = ar.result();
-            String lockValue = String.valueOf(currentTimeMillis());
+            String token = instanceId + ":" + UUID.randomUUID();
             
             redisAPI.set(
                 Arrays.asList(
                     MIGRATION_LOCK_KEY,
-                    lockValue,
+                    token,
                     "NX",
                     "PX",
                     String.valueOf(MIGRATION_LOCK_TIMEOUT_MS)
@@ -153,6 +195,9 @@ public class MigrateTool {
                         promise.fail(setResult.cause());
                     } else {
                         boolean acquired = setResult.result() != null;
+                        if (acquired) {
+                            lockToken = token;
+                        }
                         promise.complete(acquired);
                     }
                 }
@@ -163,7 +208,10 @@ public class MigrateTool {
     }
 
     /**
-     * Releases the migration lock by deleting it from Redis.
+     * Releases the migration lock, but only if it still holds the token this instance set when it
+     * acquired it (compare-and-swap via {@link #RELEASE_LOCK_SCRIPT}). This prevents deleting a lock
+     * that another instance has since legitimately acquired (e.g. after this instance's TTL expired
+     * during a long stall and {@link #lockOwnershipLost} was set by the refresh timer).
      */
     private Future<Void> releaseLock() {
         stopRefreshTimer();
@@ -177,12 +225,26 @@ public class MigrateTool {
             }
             
             RedisAPI redisAPI = ar.result();
-            redisAPI.del(Collections.singletonList(MIGRATION_LOCK_KEY), delResult -> {
-                if (delResult.failed()) {
-                    log.warn("Failed to delete migration lock (instanceId:{})", instanceId, delResult.cause());
-                    promise.fail(delResult.cause());
+            String token = lockToken;
+            if (token == null) {
+                // Nothing to release (we never held a token, e.g. acquireLock failed before setting it).
+                log.debug("No lock token to release (instanceId:{})", instanceId);
+                promise.complete();
+                return;
+            }
+            redisAPI.eval(Arrays.asList(RELEASE_LOCK_SCRIPT, "1", MIGRATION_LOCK_KEY, token), evalResult -> {
+                if (evalResult.failed()) {
+                    log.warn("Failed to delete migration lock (instanceId:{})", instanceId, evalResult.cause());
+                    promise.fail(evalResult.cause());
                 } else {
-                    log.info("Migration lock released (instanceId:{})", instanceId);
+                    boolean released = evalResult.result() != null && evalResult.result().toInteger() != 0;
+                    if (released) {
+                        log.info("Migration lock released (instanceId:{})", instanceId);
+                    } else {
+                        log.warn("Migration lock was not released because it no longer holds our token "
+                                + "(instanceId:{}) - another instance may already own it", instanceId);
+                    }
+                    lockToken = null;
                     promise.complete();
                 }
             });
@@ -257,7 +319,11 @@ public class MigrateTool {
     }
 
     /**
-     * Starts a periodic timer to refresh the migration lock.
+     * Starts a periodic timer to refresh the migration lock, using a Lua compare-and-swap so the TTL
+     * is only extended while the lock still holds this instance's token (see {@link #lockToken}). If
+     * the lock was lost (e.g. TTL expired during a stall before a refresh tick could run, and another
+     * instance has since acquired it), {@link #lockOwnershipLost} is set and the timer stops itself -
+     * further ticks would otherwise refresh a different instance's lock.
      */
     private void startRefreshTimer() {
         refreshTimerId = vertx.setPeriodic(MIGRATION_LOCK_REFRESH_MS, tid -> {
@@ -268,16 +334,26 @@ public class MigrateTool {
                 }
                 
                 RedisAPI redisAPI = ar.result();
-                redisAPI.pexpire(
-                    Arrays.asList(
-                        MIGRATION_LOCK_KEY,
-                        String.valueOf(MIGRATION_LOCK_TIMEOUT_MS)
-                    ),
-                    pexpireResult -> {
-                        if (pexpireResult.failed()) {
-                            log.warn("Failed to refresh migration lock (instanceId:{})", instanceId, pexpireResult.cause());
-                        } else {
+                String token = lockToken;
+                if (token == null) {
+                    return;
+                }
+                redisAPI.eval(
+                    Arrays.asList(REFRESH_LOCK_SCRIPT, "1", MIGRATION_LOCK_KEY, token,
+                            String.valueOf(MIGRATION_LOCK_TIMEOUT_MS)),
+                    evalResult -> {
+                        if (evalResult.failed()) {
+                            log.warn("Failed to refresh migration lock (instanceId:{})", instanceId, evalResult.cause());
+                            return;
+                        }
+                        boolean refreshed = evalResult.result() != null && evalResult.result().toInteger() != 0;
+                        if (refreshed) {
                             log.debug("Migration lock TTL refreshed (instanceId:{})", instanceId);
+                        } else {
+                            log.error("Migration lock ownership lost (instanceId:{}); another instance may now "
+                                    + "hold it. Stopping refresh timer.", instanceId);
+                            lockOwnershipLost = true;
+                            stopRefreshTimer();
                         }
                     }
                 );

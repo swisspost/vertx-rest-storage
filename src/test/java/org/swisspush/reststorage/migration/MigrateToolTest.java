@@ -187,4 +187,39 @@ public class MigrateToolTest {
                 "only the lock holder may run the task; the other instance must just wait");
         context.assertFalse(jedis.exists(MIGRATION_LOCK_KEY));
     }
+
+    @Test
+    public void refreshAndReleaseNeverTouchALockTakenOverByAnotherInstance(TestContext context) {
+        // Simulates a stalled instance whose lock TTL expired and was legitimately re-acquired by a
+        // different instance (different token) while our task was still running. Neither the periodic
+        // refresh nor the final release must ever mutate that other instance's lock.
+        String foreignToken = "instance-foreign:takeover-token";
+        Task longRunningTask = new Task() {
+            @Override
+            public String getTaskKey() {
+                return "long-running";
+            }
+
+            @Override
+            public Future<Boolean> run() {
+                Promise<Boolean> promise = Promise.promise();
+                // Simulate the takeover shortly after our own lock was acquired, well before our
+                // first refresh tick (refresh interval is 2s), and keep running past it so the
+                // refresh timer has a chance to observe the mismatch.
+                vertx.setTimer(300, id -> {
+                    jedis.set(MIGRATION_LOCK_KEY, foreignToken);
+                    jedis.pexpire(MIGRATION_LOCK_KEY, 30_000);
+                });
+                vertx.setTimer(3_500, id -> promise.complete(true));
+                return promise.future();
+            }
+        };
+
+        MigrateTool tool = new MigrateTool(vertx, redisProvider, "instance-a").addTask(longRunningTask);
+
+        context.assertFalse(await(context, tool.start()),
+                "migration result must not be trusted once lock ownership was lost mid-run");
+        context.assertEquals(foreignToken, jedis.get(MIGRATION_LOCK_KEY),
+                "the other instance's lock (different token) must survive both our refresh and release");
+    }
 }

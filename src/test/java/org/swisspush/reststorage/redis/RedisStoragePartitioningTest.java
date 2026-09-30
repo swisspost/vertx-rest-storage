@@ -591,4 +591,37 @@ public class RedisStoragePartitioningTest {
             async.complete();
         });
     }
+
+    @Test
+    public void deleteRootStopsAtFirstRejectedPartitionInsteadOfDestroyingTheRest(TestContext context) {
+        // "project" is scanned before "invoices" (SMEMBERS returns them in that order below) and refuses
+        // the delete (notEmpty); this must not be papered over by continuing on and deleting "invoices"
+        // anyway - the scan has to stop right there.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                if (":{project}".equals(inv.args.get(2))) {
+                    return bulk("notEmpty");
+                }
+                return bulk("deleted");
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.error);
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            context.assertEquals(":{project}", evalshaCalls.get(0).args.get(2));
+
+            // "invoices" must never have been touched (no delete attempt, no registry pruning).
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty());
+            async.complete();
+        });
+    }
 }

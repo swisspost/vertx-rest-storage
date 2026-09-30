@@ -1186,7 +1186,7 @@ public class RedisStorage implements Storage {
                     return;
                 }
                 deletePartitionsSequentially(redisAPI, tags, 0, lockOwner, lockMode, lockExpire,
-                        confirmCollectionDelete, deleteRecursive, false, null, handler);
+                        confirmCollectionDelete, deleteRecursive, false, handler);
             });
         });
     }
@@ -1195,19 +1195,25 @@ public class RedisStorage implements Storage {
      * Processes partition tags one at a time for a root DELETE (see {@link #deleteAllPartitions}).
      * {@code anyDeleted} tracks whether at least one partition actually had something deleted, so that
      * a root DELETE where every known partition turns out to already be empty still reports "not found"
-     * like a plain DELETE of a non-existent resource would. {@code pendingResult} carries the first
-     * "interesting" (lock-rejected / notEmpty) outcome across partitions so it is not masked by later,
-     * unrelated partitions succeeding.
+     * like a plain DELETE of a non-existent resource would.
+     *
+     * <p><b>Stops at the first "interesting" (lock-rejected / notEmpty / error) outcome</b> instead of
+     * continuing through the remaining tags: each partition tag is a separate Redis Cluster slot, so
+     * there is no way to make this scattered delete atomic across all of them, but once one partition
+     * has already refused to be deleted (e.g. {@code notEmpty} without {@code confirmCollectionDelete}),
+     * ploughing on and destroying further, unrelated partitions anyway - while still reporting that
+     * rejection back to the caller as if nothing had happened - would make the blast radius of a single
+     * rejected root DELETE unbounded and silently data-destructive. Halting immediately keeps the
+     * (still unavoidable) partial-deletion window limited to exactly the partitions already processed
+     * strictly before the one that was rejected.</p>
      */
     private void deletePartitionsSequentially(final RedisAPI redisAPI, final List<String> tags, final int index,
                                               final String lockOwner, final LockMode lockMode, final long lockExpire,
                                               final boolean confirmCollectionDelete, final boolean deleteRecursive,
-                                              final boolean anyDeleted, final Resource pendingResult,
+                                              final boolean anyDeleted,
                                               final Handler<Resource> handler) {
         if (index >= tags.size()) {
-            if (pendingResult != null) {
-                handler.handle(pendingResult);
-            } else if (anyDeleted) {
+            if (anyDeleted) {
                 handler.handle(new Resource());
             } else {
                 notFound(handler);
@@ -1236,28 +1242,27 @@ public class RedisStorage implements Storage {
         reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.DELETE_CLUSTER,
                 new Delete(LuaScript.DELETE_CLUSTER, keys, arguments, result -> {
                     boolean interesting = result.rejected || result.error;
-                    Resource nextPending = pendingResult;
-                    boolean nextAnyDeleted = anyDeleted;
                     if (interesting) {
-                        if (nextPending == null) {
-                            nextPending = result;
-                        }
-                    } else {
-                        if (result.exists) {
-                            // "deleted" (as opposed to "notFound", which leaves result.exists == false)
-                            nextAnyDeleted = true;
-                        }
-                        // Nothing (interesting) left for this tag: prune it from the registry so future
-                        // root listings/deletes/cleanups stop iterating over it.
-                        redisAPI.srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
-                            if (sremEv.failed()) {
-                                log.warn("Could not remove partition tag '{}' from registry in storage {}",
-                                        tag, storageIdentifier, sremEv.cause());
-                            }
-                        });
+                        // Stop here rather than processing further tags - see the Javadoc above on why
+                        // continuing would make the blast radius of this rejection unbounded.
+                        handler.handle(result);
+                        return;
                     }
+                    boolean nextAnyDeleted = anyDeleted;
+                    if (result.exists) {
+                        // "deleted" (as opposed to "notFound", which leaves result.exists == false)
+                        nextAnyDeleted = true;
+                    }
+                    // Nothing (interesting) left for this tag: prune it from the registry so future
+                    // root listings/deletes/cleanups stop iterating over it.
+                    redisAPI.srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
+                        if (sremEv.failed()) {
+                            log.warn("Could not remove partition tag '{}' from registry in storage {}",
+                                    tag, storageIdentifier, sremEv.cause());
+                        }
+                    });
                     deletePartitionsSequentially(redisAPI, tags, index + 1, lockOwner, lockMode, lockExpire,
-                            confirmCollectionDelete, deleteRecursive, nextAnyDeleted, nextPending, handler);
+                            confirmCollectionDelete, deleteRecursive, nextAnyDeleted, handler);
                 }), 0);
     }
 

@@ -166,8 +166,12 @@ public class RedisStoragePartitioningTest {
         // guarantee) must be recognized and passed through unchanged - re-deriving the tag must be a
         // true no-op, or every re-visit would wrap the key again and corrupt it.
         assertEquals("weird", PartitionContext.derivePartitionTag(":{weird}:server"));
-        // a segment consisting only of braces has nothing left -> null, same as root/empty
-        assertNull(PartitionContext.derivePartitionTag(":{}:server"));
+        // A literal "{}" segment is NOT treated as an already-tagged/empty-content case, since
+        // forPath() never itself produces an empty tag - it must be routable as ordinary raw content
+        // (escaped like any other segment containing braces), distinct from root/empty.
+        assertNotNull(PartitionContext.derivePartitionTag(":{}:server"));
+        assertNotEquals(PartitionContext.derivePartitionTag(":{}:server"),
+                PartitionContext.derivePartitionTag(":server"));
     }
 
     @Test
@@ -178,6 +182,19 @@ public class RedisStoragePartitioningTest {
         String withStrayBraces = PartitionContext.derivePartitionTag(":fo{o}:server");
         assertEquals("foo", plain);
         assertNotEquals(plain, withStrayBraces);
+    }
+
+    @Test
+    public void derivePartitionTagEscapeSchemeIsInjectiveEvenWhenRawSegmentContainsTheEscapeMarker() {
+        // A naive fixed one-for-one character substitution (e.g. always replacing '{' with a fixed
+        // placeholder character) would collide whenever a raw segment already contains that literal
+        // placeholder character. The actual (JSON-Pointer-style) scheme escapes the marker itself
+        // first, so this must never collide, regardless of what the raw segment already contains.
+        String segmentWithLiteralBrace = ":fo{o:server"; // segment "fo{o" (unbalanced brace)
+        String segmentWithLiteralMarkerCharacter = ":fo\u00A61o:server"; // segment "fo¦1o"
+        assertNotEquals(
+                PartitionContext.derivePartitionTag(segmentWithLiteralBrace),
+                PartitionContext.derivePartitionTag(segmentWithLiteralMarkerCharacter));
     }
 
     @Test

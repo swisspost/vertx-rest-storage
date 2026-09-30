@@ -28,11 +28,14 @@ public final class PartitionContext {
     // verbatim inside our synthetic hash tag - and must not simply be discarded either (two distinct
     // segments differing only by such characters, e.g. "foo" and "fo{o}", would otherwise reduce to
     // the identical tag "foo" and collide onto the very same Redis key, silently overwriting data).
-    // Instead they are escaped to reversible placeholder characters, one-for-one, following the same
-    // pattern used by ResourceNameUtil for ':'/';' - this keeps distinct raw segments distinct while
-    // still yielding a brace-free hash tag.
-    private static final String OPEN_BRACE_REPLACEMENT = "\u00A6";  // ¦
-    private static final String CLOSE_BRACE_REPLACEMENT = "\u00A4"; // ¤
+    // Instead they are escaped using a genuinely injective (JSON-Pointer-style) scheme: the escape
+    // marker itself is escaped first, so no raw input - including input that happens to already
+    // contain the escape marker character - can ever collide with another raw segment's escaped
+    // output. A naive fixed one-for-one character substitution (e.g. always replacing '{' with some
+    // placeholder character) would NOT have this guarantee, since a raw segment containing that
+    // literal placeholder character would then collide with an unrelated segment whose brace got
+    // replaced by it.
+    private static final char ESCAPE_MARKER = '\u00A6'; // ¦
 
     private final String key;
     private final String expirableSetKey;
@@ -72,7 +75,7 @@ public final class PartitionContext {
      * no segment to partition on (e.g. root).
      *
      * <p>Two distinct situations reach this method with a first segment that already looks like
-     * {@code {something}}:
+     * {@code {something}} (with a non-empty {@code something}):
      * <ul>
      *   <li>The segment is the result of a <i>previous</i> tagging pass resurfacing - e.g. a key
      *       {@code ClusterPartitionMigrationTask} already renamed to {@code :{project}:...} coming back
@@ -84,15 +87,17 @@ public final class PartitionContext {
      *       resource paths). This is indistinguishable from the first case by construction, and is
      *       therefore treated the same way (the tag becomes {@code something}) - meaning a raw segment
      *       exactly of the form {@code {x}} and a raw segment {@code x} unavoidably collide onto the
-     *       same partition tag/key. This is a narrow, accepted limitation (see the field comment on
-     *       {@link #OPEN_BRACE_REPLACEMENT}); avoiding it entirely would require escaping literal
-     *       {@code {}/{@code }} in every resource path up front (in {@code RedisStorage.encodePath}),
-     *       which is a larger, separate change with its own backward-compatibility implications for
-     *       already-stored (non-cluster) keys.</li>
+     *       same partition tag/key. This is a narrow, accepted limitation; avoiding it entirely would
+     *       require escaping literal {@code {}/{@code }} in every resource path up front (in
+     *       {@code RedisStorage.encodePath}), which is a larger, separate change with its own
+     *       backward-compatibility implications for already-stored (non-cluster) keys. Note this
+     *       ambiguity only applies when {@code something} itself is non-empty - a literal segment
+     *       {@code "{}"} is treated as ordinary raw content (escaped like any other), not as an empty
+     *       tag/root, since {@code forPath} never itself produces an empty tag.</li>
      * </ul>
      * Any other literal {@code {}/{@code }} characters - i.e. ones that do <i>not</i> single-wrap the
-     * whole segment - are escaped to reversible placeholder characters rather than discarded, so e.g.
-     * {@code foo} and {@code fo{o}} still reliably produce different tags.
+     * whole segment - are escaped using {@link #escapeBraces(String)}, so e.g. {@code foo} and
+     * {@code fo{o}} still reliably produce different tags, regardless of the raw segment's content.
      */
     public static String derivePartitionTag(String encodedPath) {
         String trimmed = encodedPath;
@@ -108,24 +113,51 @@ public final class PartitionContext {
             return null;
         }
         if (isSingleWrappedInBraces(segment)) {
-            // Already tagged (or raw content shaped exactly like a tag, see Javadoc) - reuse the inner
-            // content verbatim so re-deriving the tag a second time is a true no-op. An empty inner
-            // content ("{}") has nothing left to tag on, same as an empty/root path.
-            String inner = segment.substring(1, segment.length() - 1);
-            return inner.isEmpty() ? null : inner;
+            // Already tagged (or raw content shaped exactly like a non-empty tag, see Javadoc) - reuse
+            // the inner content verbatim so re-deriving the tag a second time is a true no-op.
+            return segment.substring(1, segment.length() - 1);
         }
         // Hash tag delimiters must not appear literally inside the tag value itself, but must not be
         // discarded either - escape them instead (see field comments above).
-        return segment.replace("{", OPEN_BRACE_REPLACEMENT).replace("}", CLOSE_BRACE_REPLACEMENT);
+        return escapeBraces(segment);
     }
 
     /**
-     * True when {@code segment} starts with {@code '{'}, ends with {@code '}'}, and has no other
-     * {@code '{'}/{@code '}'} in between - i.e. it is already a single, well-formed Redis Cluster hash
-     * tag rather than raw content that merely contains stray brace characters.
+     * Escapes {@code '{'}, {@code '}'} and any literal occurrence of {@link #ESCAPE_MARKER} itself
+     * using a JSON-Pointer-style scheme ({@code ~0}/{@code ~1}/{@code ~2}-equivalent, here using
+     * {@link #ESCAPE_MARKER} as the marker instead of {@code '~'}). Escaping the marker character
+     * first (before using it to encode braces) is what makes this scheme genuinely injective - no two
+     * distinct raw segments can ever produce the same escaped output, regardless of what characters
+     * the raw segment happens to already contain. A naive fixed one-for-one character substitution
+     * (replacing '{'/'}' directly with fixed placeholder characters, without also escaping literal
+     * occurrences of those placeholders) would NOT have this guarantee.
+     */
+    private static String escapeBraces(String segment) {
+        StringBuilder sb = new StringBuilder(segment.length());
+        for (int i = 0; i < segment.length(); i++) {
+            char c = segment.charAt(i);
+            if (c == ESCAPE_MARKER) {
+                sb.append(ESCAPE_MARKER).append('0');
+            } else if (c == '{') {
+                sb.append(ESCAPE_MARKER).append('1');
+            } else if (c == '}') {
+                sb.append(ESCAPE_MARKER).append('2');
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * True when {@code segment} starts with {@code '{'}, ends with {@code '}'}, has no other
+     * {@code '{'}/{@code '}'} in between, and has non-empty inner content - i.e. it is already a
+     * single, well-formed, non-empty Redis Cluster hash tag rather than raw content that merely
+     * contains stray brace characters (or an empty {@code "{}"}, which {@link #forPath} never itself
+     * produces and is therefore always genuinely raw content).
      */
     private static boolean isSingleWrappedInBraces(String segment) {
-        if (segment.length() < 2 || segment.charAt(0) != '{' || segment.charAt(segment.length() - 1) != '}') {
+        if (segment.length() < 3 || segment.charAt(0) != '{' || segment.charAt(segment.length() - 1) != '}') {
             return false;
         }
         String inner = segment.substring(1, segment.length() - 1);

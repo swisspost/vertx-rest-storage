@@ -506,6 +506,60 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenResourceReappearedConcurrently(
+            TestContext context) {
+        // Regression test for the registry SREM/SADD race: if a concurrent PUT to a sibling resource
+        // under the same tag lands (and its own SADD registers the tag) strictly between this DELETE's
+        // Lua script finishing and its registry-pruning step, the tag must NOT be pruned - otherwise the
+        // still-live data would become invisible to root GET/DELETE/cleanup until yet another PUT
+        // happens to re-register it. This is simulated by having the pre-SREM EXISTS re-check on the
+        // tagged resources key report the resource as (again) present.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EXISTS) {
+                if ("rest-storage:resources:{project}".equals(inv.args.get(0))) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("deleted");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "must not prune a tag whose data reappeared concurrently before the SREM was issued");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenCollectionReappearedConcurrently(
+            TestContext context) {
+        // Same race as above, but the sibling resource that concurrently reappeared under the tag is a
+        // collection rather than a top-level document.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EXISTS) {
+                if ("rest-storage:collections:{project}".equals(inv.args.get(0))) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("deleted");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "must not prune a tag whose data reappeared concurrently before the SREM was issued");
+            async.complete();
+        });
+    }
+
+    @Test
     public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenSilentlyLocked(TestContext context) {
         // A "silent" result (LockMode.SILENT lock held by a different owner - nothing was actually
         // deleted) must not be mistaken for a successful, whole-partition removal, the same as a
@@ -817,6 +871,42 @@ public class RedisStoragePartitioningTest {
             for (Invocation invocation : sremCalls) {
                 context.assertEquals("rest-storage:locks-partitions", invocation.args.get(0));
             }
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootDoesNotPruneATagWhoseDataReappearedConcurrentlyDuringTheScatterDelete(TestContext context) {
+        // Same registry SREM/SADD race as deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenResourceReappearedConcurrently,
+        // but exercised via the root-scatter DELETE path (deletePartitionsSequentially) instead of a
+        // direct top-level DELETE: "invoices" must still be pruned normally, while "project" - whose
+        // tagged resources key the pre-SREM EXISTS re-check reports as (again) present, simulating a
+        // concurrent sibling PUT's SADD landing in between - must be left registered.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                return bulk("deleted");
+            }
+            if (inv.command == Command.EXISTS) {
+                if ("rest-storage:resources:{project}".equals(inv.args.get(0))) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertFalse(resource.error);
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(1, sremCalls.size());
+            context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "invoices"), sremCalls.get(0).args);
             async.complete();
         });
     }

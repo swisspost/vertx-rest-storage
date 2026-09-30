@@ -1182,12 +1182,7 @@ public class RedisStorage implements Storage {
                 if (!result.error && !result.rejected && !result.locked) {
                     redisProvider.redis().onComplete(regEv -> {
                         if (regEv.succeeded()) {
-                            regEv.result().srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
-                                if (sremEv.failed()) {
-                                    log.warn("Could not remove partition tag '{}' from registry in storage {}",
-                                            tag, storageIdentifier, sremEv.cause());
-                                }
-                            });
+                            pruneRegistryTagIfEmpty(regEv.result(), tag);
                         }
                     });
                 }
@@ -1305,12 +1300,7 @@ public class RedisStorage implements Storage {
                     }
                     // Nothing (interesting) left for this tag: prune it from the registry so future
                     // root listings/deletes/cleanups stop iterating over it.
-                    redisAPI.srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
-                        if (sremEv.failed()) {
-                            log.warn("Could not remove partition tag '{}' from registry in storage {}",
-                                    tag, storageIdentifier, sremEv.cause());
-                        }
-                    });
+                    pruneRegistryTagIfEmpty(redisAPI, tag);
                     deletePartitionsSequentially(redisAPI, tags, index + 1, lockOwner, lockMode, lockExpire,
                             confirmCollectionDelete, deleteRecursive, nextAnyDeleted, handler);
                 }), 0);
@@ -1408,8 +1398,12 @@ public class RedisStorage implements Storage {
         if (existsEv.failed() || existsEv.result() == null) {
             return false;
         }
-        Long count = existsEv.result().toLong();
-        return count != null && count == 1L;
+        try {
+            Long count = existsEv.result().toLong();
+            return count != null && count == 1L;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     /**
@@ -1668,6 +1662,37 @@ public class RedisStorage implements Storage {
             if (ar.failed()) {
                 log.warn("Could not register partition tag '{}' in storage {}", tag, storageIdentifier, ar.cause());
             }
+        });
+    }
+
+    /**
+     * Prunes {@code tag} from the (untagged, global) partition registry, but only after re-confirming
+     * with plain (single-key, cluster-safe) EXISTS checks that neither a resource nor a collection is
+     * currently stored under it. {@code registerPartitionTag} and this prune both act on the same
+     * un-tagged registry key, so - unlike the tagged resource/collection keys they track - the two can
+     * never be combined into a single cross-slot-safe Lua CAS; a concurrent PUT's SADD landing strictly
+     * between this method's EXISTS checks and its own SREM call can still, in principle, be undone by
+     * that SREM. This re-check narrows that race window from "the whole async delete-to-prune gap" down
+     * to just the SREM round-trip itself, and any tag wrongly pruned this way self-heals the next time a
+     * PUT under it re-registers the tag (see {@link #registerPartitionTag}).
+     */
+    private void pruneRegistryTagIfEmpty(RedisAPI redisAPI, String tag) {
+        String taggedKey = ":{" + tag + "}";
+        redisAPI.exists(Collections.singletonList(redisResourcesPrefix + taggedKey), resourceExistsEv -> {
+            if (isExists(resourceExistsEv)) {
+                return;
+            }
+            redisAPI.exists(Collections.singletonList(redisCollectionsPrefix + taggedKey), collectionExistsEv -> {
+                if (isExists(collectionExistsEv)) {
+                    return;
+                }
+                redisAPI.srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
+                    if (sremEv.failed()) {
+                        log.warn("Could not remove partition tag '{}' from registry in storage {}",
+                                tag, storageIdentifier, sremEv.cause());
+                    }
+                });
+            });
         });
     }
 

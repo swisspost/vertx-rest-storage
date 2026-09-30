@@ -313,6 +313,38 @@ public class MigrateToolTest {
     }
 
     @Test
+    public void markLockAsFailedRetriesTransientRedisFailuresBeforeGivingUp(TestContext context) {
+        // A transient Redis blip while attempting to mark the lock as FAILED must not be given up on
+        // immediately - stopping the refresh timer right away and then failing to mark the lock would
+        // leave it un-refreshed and let it expire on its own, causing other instances' pollLockKey to
+        // see it simply gone and mistake the genuinely failed migration for a completed one. Instead,
+        // the mark-as-failed attempt must be retried a bounded number of times (keeping the refresh
+        // timer alive throughout) before giving up.
+        AtomicInteger callCount = new AtomicInteger();
+        // Call #0 is acquireLock's own redis() call (must succeed); calls #1 and #2 (the first two
+        // markLockAsFailed attempts) simulate a transient failure; call #3 onwards (including the
+        // eventual successful markLockAsFailed attempt, and any refresh ticks) succeed normally.
+        RedisProvider flakyThenRecoveringProvider = () -> {
+            int n = callCount.getAndIncrement();
+            if (n >= 1 && n <= 2) {
+                return Future.failedFuture(new RuntimeException("simulated transient redis failure"));
+            }
+            return redisProvider.redis();
+        };
+
+        MigrateTool tool = new MigrateTool(vertx, flakyThenRecoveringProvider, "instance-a")
+                .addTask(failingTask("boom"));
+
+        context.assertFalse(await(context, tool.start()), "a task returning false must fail the migration");
+        context.assertTrue(jedis.exists(MIGRATION_LOCK_KEY),
+                "lock must eventually be marked as failed despite the transient retries");
+        context.assertTrue(jedis.get(MIGRATION_LOCK_KEY).endsWith(":FAILED"),
+                "lock value must be marked as failed once the retries recover");
+        context.assertEquals(-1L, jedis.ttl(MIGRATION_LOCK_KEY),
+                "the failure marker must have no TTL - it must never expire on its own");
+    }
+
+    @Test
     public void failsWhenPollingForOtherInstancesMigrationCompletionFails(TestContext context) {
         Task slowTask = new Task() {
             @Override

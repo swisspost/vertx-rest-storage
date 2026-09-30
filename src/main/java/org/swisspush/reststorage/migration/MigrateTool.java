@@ -76,6 +76,12 @@ public class MigrateTool {
             "  return 0 " +
             "end";
     private static final String LOCK_FAILED_MARKER_SUFFIX = ":FAILED";
+    // Bounded retry policy for markLockAsFailed()'s CAS eval: a transient Redis connectivity blip
+    // must not silently let the lock expire (see markLockAsFailed()'s Javadoc) - retrying a few times
+    // with a short delay, while the refresh timer keeps extending the TTL in the meantime, gives
+    // Redis a real chance to recover before giving up.
+    private static final int MARK_FAILED_MAX_ATTEMPTS = 5;
+    private static final int MARK_FAILED_RETRY_DELAY_MS = 500;
 
     private final String instanceId;
     private final RedisProvider redisProvider;
@@ -293,16 +299,26 @@ public class MigrateTool {
      * apart from "failed and stuck", rather than the lock silently going away (via a future TTL expiry
      * or manual cleanup) and being mistaken for a successfully completed migration. A human must
      * delete the lock key manually before the migration can be retried.
+     *
+     * <p><b>Must not stop the refresh timer before the CAS actually lands</b>: the timer is what keeps
+     * extending the lock's TTL, so stopping it first and then hitting a transient Redis failure while
+     * attempting the CAS would leave the lock to expire naturally within {@link #MIGRATION_LOCK_TIMEOUT_MS}
+     * - at which point any other instance polling it (see {@link #pollLockKey}) would see it simply gone
+     * and mistake the failed migration for a completed one. Instead, this retries the CAS a bounded
+     * number of times (with the timer still running throughout) before giving up.</p>
      */
     private Future<Void> markLockAsFailed() {
-        stopRefreshTimer();
         Promise<Void> promise = Promise.promise();
+        attemptMarkLockAsFailed(promise, 1);
+        return promise.future();
+    }
 
+    private void attemptMarkLockAsFailed(final Promise<Void> promise, final int attempt) {
         redisProvider.redis().onComplete(ar -> {
             if (ar.failed()) {
-                log.warn("Redis connection failed while marking migration lock as failed (instanceId:{})",
-                        instanceId, ar.cause());
-                promise.fail(ar.cause());
+                log.warn("Redis connection failed while marking migration lock as failed (instanceId:{}, attempt:{}/{})",
+                        instanceId, attempt, MARK_FAILED_MAX_ATTEMPTS, ar.cause());
+                retryOrGiveUpMarkingLockAsFailed(promise, attempt, ar.cause());
                 return;
             }
 
@@ -310,6 +326,7 @@ public class MigrateTool {
             String token = lockToken;
             if (token == null) {
                 log.debug("No lock token to mark as failed (instanceId:{})", instanceId);
+                stopRefreshTimer();
                 promise.complete();
                 return;
             }
@@ -317,9 +334,15 @@ public class MigrateTool {
             redisAPI.eval(Arrays.asList(MARK_LOCK_FAILED_SCRIPT, "1", MIGRATION_LOCK_KEY, token, failedMarker),
                     evalResult -> {
                 if (evalResult.failed()) {
-                    log.warn("Failed to mark migration lock as failed (instanceId:{})", instanceId, evalResult.cause());
-                    promise.fail(evalResult.cause());
+                    log.warn("Failed to mark migration lock as failed (instanceId:{}, attempt:{}/{})",
+                            instanceId, attempt, MARK_FAILED_MAX_ATTEMPTS, evalResult.cause());
+                    retryOrGiveUpMarkingLockAsFailed(promise, attempt, evalResult.cause());
                 } else {
+                    // The CAS check itself completed (whether or not it still held our token) - the
+                    // lock is now in a well-defined terminal state (either marked as failed, or already
+                    // taken over by another instance we no longer need to protect), so it's safe to
+                    // stop refreshing it now.
+                    stopRefreshTimer();
                     boolean marked = evalResult.result() != null && "OK".equalsIgnoreCase(evalResult.result().toString());
                     if (marked) {
                         log.error("Migration task failed (instanceId:{}); lock left in place as a permanent failure "
@@ -334,8 +357,23 @@ public class MigrateTool {
                 }
             });
         });
+    }
 
-        return promise.future();
+    private void retryOrGiveUpMarkingLockAsFailed(final Promise<Void> promise, final int attempt, final Throwable cause) {
+        if (attempt >= MARK_FAILED_MAX_ATTEMPTS) {
+            // Retries exhausted: a sustained Redis outage lasting through every attempt is fundamentally
+            // indistinguishable from "Redis is down for good" - deliberately keep the refresh timer
+            // running rather than stopping it here, so that if Redis recovers before this process exits,
+            // the lock's TTL keeps getting extended (still under our own token, since we never lost
+            // ownership) and it does not silently disappear out from under a genuinely failed migration.
+            log.error("Giving up marking migration lock as failed after {} attempts (instanceId:{}); leaving the "
+                    + "refresh timer running so the lock does not silently expire while Redis recovers - manual "
+                    + "operator intervention is still required to unblock other instances", MARK_FAILED_MAX_ATTEMPTS,
+                    instanceId, cause);
+            promise.fail(cause);
+            return;
+        }
+        vertx.setTimer(MARK_FAILED_RETRY_DELAY_MS, tid -> attemptMarkLockAsFailed(promise, attempt + 1));
     }
 
     /**

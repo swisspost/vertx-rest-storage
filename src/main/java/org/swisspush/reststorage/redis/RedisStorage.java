@@ -1174,10 +1174,12 @@ public class RedisStorage implements Storage {
             // "notFound" outcome (not just "existed and got deleted"), so an already-empty partition
             // (e.g. emptied earlier via a nested delete, see the accepted registry-pruning limitation
             // on nested deletes) self-heals out of the registry the next time its top level is targeted
-            // directly - mirroring deletePartitionsSequentially's same self-healing behavior.
+            // directly - mirroring deletePartitionsSequentially's same self-healing behavior. A
+            // "locked" outcome (LockMode.SILENT lock held by a different owner, so nothing was actually
+            // deleted) must NOT prune the registry either - the partition's data is still fully intact.
             String tag = partition.getTag();
             deleteHandler = result -> {
-                if (!result.error && !result.rejected) {
+                if (!result.error && !result.rejected && !result.locked) {
                     redisProvider.redis().onComplete(regEv -> {
                         if (regEv.succeeded()) {
                             regEv.result().srem(Arrays.asList(partitionRegistryKey, tag), sremEv -> {
@@ -1242,8 +1244,8 @@ public class RedisStorage implements Storage {
      * a root DELETE where every known partition turns out to already be empty still reports "not found"
      * like a plain DELETE of a non-existent resource would.
      *
-     * <p><b>Stops at the first "interesting" (lock-rejected / notEmpty / error) outcome</b> instead of
-     * continuing through the remaining tags: each partition tag is a separate Redis Cluster slot, so
+     * <p><b>Stops at the first "interesting" (lock-rejected / silently-locked / notEmpty / error)
+     * outcome</b> instead of continuing through the remaining tags: each partition tag is a separate Redis Cluster slot, so
      * there is no way to make this scattered delete atomic across all of them, but once one partition
      * has already refused to be deleted (e.g. {@code notEmpty} without {@code confirmCollectionDelete}),
      * ploughing on and destroying further, unrelated partitions anyway - while still reporting that
@@ -1286,10 +1288,13 @@ public class RedisStorage implements Storage {
         );
         reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.DELETE_CLUSTER,
                 new Delete(LuaScript.DELETE_CLUSTER, keys, arguments, result -> {
-                    boolean interesting = result.rejected || result.error;
+                    boolean interesting = result.rejected || result.error || result.locked;
                     if (interesting) {
                         // Stop here rather than processing further tags - see the Javadoc above on why
-                        // continuing would make the blast radius of this rejection unbounded.
+                        // continuing would make the blast radius of this rejection unbounded. A
+                        // "locked" outcome (LockMode.SILENT lock held by a different owner - nothing was
+                        // actually deleted) must be treated the same way: this partition's data is still
+                        // fully intact and its tag must NOT be pruned from the registry.
                         handler.handle(result);
                         return;
                     }
@@ -1479,6 +1484,17 @@ public class RedisStorage implements Storage {
                     }
                     if (LockMode.REJECT.text().equals(result)) {
                         rejected(handler);
+                        return;
+                    }
+                    if (LockMode.SILENT.text().equals(result)) {
+                        // A different owner currently holds a LockMode.SILENT lock on this resource, so
+                        // nothing was actually deleted. Preserve the existing `exists=true`/`error=false`
+                        // behavior for backward compatibility (see LockMode.SILENT's semantics), but flag
+                        // it as `locked` so callers that need to distinguish "genuinely deleted" from
+                        // "silently left untouched" (e.g. partition-registry pruning) can do so.
+                        Resource r = new Resource();
+                        r.locked = true;
+                        handler.handle(r);
                         return;
                     }
                     handler.handle(new Resource());

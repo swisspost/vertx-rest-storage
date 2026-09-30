@@ -506,6 +506,23 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenSilentlyLocked(TestContext context) {
+        // A "silent" result (LockMode.SILENT lock held by a different owner - nothing was actually
+        // deleted) must not be mistaken for a successful, whole-partition removal, the same as a
+        // rejected delete already isn't.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk(org.swisspush.reststorage.util.LockMode.SILENT.text()));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.locked);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a silently-locked delete must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
     public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenRejected(TestContext context) {
         // A rejected/errored delete must not be mistaken for a successful, whole-partition removal.
         Async async = context.async();
@@ -849,6 +866,40 @@ public class RedisStoragePartitioningTest {
             context.assertEquals(":{project}", evalshaCalls.get(0).args.get(2));
 
             // "invoices" must never have been touched (no delete attempt, no registry pruning).
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootStopsAtFirstSilentlyLockedPartitionInsteadOfPruningItsRegistryEntry(TestContext context) {
+        // "project" is scanned before "invoices" and is silently lock-protected (nothing actually
+        // deleted); this must be treated the same as "notEmpty"/rejected - halt immediately, and must
+        // NOT prune "project"'s still-fully-intact registry entry, nor continue on to "invoices".
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                if (":{project}".equals(inv.args.get(2))) {
+                    return bulk(org.swisspush.reststorage.util.LockMode.SILENT.text());
+                }
+                return bulk("deleted");
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.locked);
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            context.assertEquals(":{project}", evalshaCalls.get(0).args.get(2));
+
+            // Neither "project" (silently locked, still fully intact) nor "invoices" (never reached)
+            // may be pruned from the registry.
             context.assertTrue(api.byCommand(Command.SREM).isEmpty());
             async.complete();
         });

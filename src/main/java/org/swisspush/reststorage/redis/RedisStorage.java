@@ -980,7 +980,15 @@ public class RedisStorage implements Storage {
     public void put(String path, String etag, boolean merge, long expire, String lockOwner, LockMode lockMode,
                     long lockExpire, boolean storeCompressed, Handler<Resource> handler) {
         final PartitionContext partition = partitionContextFor(encodePath(path));
-        final LuaScript putScript = partitioningEnabled && partition.getTag() != null ? LuaScript.PUT_CLUSTER : LuaScript.PUT;
+        if (partitioningEnabled && partition.getTag() == null) {
+            // Root has no partition tag to route a PUT by (see PartitionContext#forPath). Unlike GET/DELETE,
+            // there's no meaningful scatter/gather for a single-resource PUT, and silently writing to the
+            // never-populated untagged root key would create an orphan invisible to root GET/DELETE. Fail
+            // loudly instead, matching storageExpand's root guard.
+            error(handler, "PUT at root is not supported when Redis Cluster partitioning is enabled");
+            return;
+        }
+        final LuaScript putScript = partition.getTag() != null ? LuaScript.PUT_CLUSTER : LuaScript.PUT;
         final DocumentResource d = new DocumentResource();
         final ByteArrayWriteStream stream = new ByteArrayWriteStream();
 

@@ -320,6 +320,20 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void putAtRootFailsInsteadOfSilentlyWritingToTheUntaggedRootKeyWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.put("/", null, false, -1, resource -> {
+            context.assertTrue(resource.error);
+            // Must never have evaluated PUT against the never-populated untagged root key.
+            context.assertTrue(api.byCommand(Command.EVALSHA).isEmpty());
+            async.complete();
+        });
+    }
+
+    @Test
     public void deleteUsesTaggedKeyAndExpirableSetWhenPartitioningEnabled(TestContext context) {
         Async async = context.async();
         FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok"));

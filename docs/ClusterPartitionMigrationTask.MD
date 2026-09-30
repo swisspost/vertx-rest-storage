@@ -105,7 +105,7 @@ sequenceDiagram
             Task->>Redis: SET DONE_KEY <timestamp>
             Task-->>MT: true
         end
-        MT->>Redis: DEL migration lock
+        MT->>Redis: EVAL release script (DEL only if lock still holds our token)
     else lock held elsewhere
         MT->>Redis: poll EXISTS migration lock every 2s
         Redis-->>MT: lock gone
@@ -114,8 +114,11 @@ sequenceDiagram
 ```
 
 Only one instance ever executes the task body at a time; every other instance polls the lock and
-proceeds once it's released. The lock's TTL is refreshed every 2s for as long as the task runs, so a
-long migration cannot lose the lock mid-way.
+proceeds once it's released. The lock's TTL is refreshed every 2s for as long as the task runs, via a
+compare-and-swap that only extends the TTL while the lock still holds this instance's own token - see
+[MigrateTool.md](MigrateTool.md#key-layout) for the full ownership-token rationale and what happens if a
+long stall causes ownership to be lost mid-run (the migration result is then treated as untrustworthy
+rather than silently reported as successful).
 
 ## See also
 

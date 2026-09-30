@@ -306,6 +306,20 @@ public class RedisStoragePartitioningTest {
     }
 
     @Test
+    public void storageExpandAtRootFailsInsteadOfSilentlyLookingEmptyWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.storageExpand("/", null, List.of("project", "invoices"), resource -> {
+            context.assertTrue(resource.error);
+            // Must never have evaluated STORAGE_EXPAND against the never-populated untagged root key.
+            context.assertTrue(api.byCommand(Command.EVALSHA).isEmpty());
+            async.complete();
+        });
+    }
+
+    @Test
     public void deleteUsesTaggedKeyAndExpirableSetWhenPartitioningEnabled(TestContext context) {
         Async async = context.async();
         FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok"));

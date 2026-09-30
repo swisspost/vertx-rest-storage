@@ -287,7 +287,12 @@ same shared, untagged root collection entry), root `GET`, `PUT` and `DELETE` are
   known partition tag (tracked in a plain Redis set, updated on every successful `PUT`) and gathering the results
   into a collection listing, instead of relying on the shared root key.
 * A root `DELETE` is resolved the same way: each known partition tag is deleted independently (via
-  `del-cluster.lua`), pruning the partition-tag registry as each partition becomes empty.
+  `del-cluster.lua`), pruning the partition-tag registry as each partition becomes empty. Processing stops
+  at the first partition that rejects the delete (e.g. `notEmpty`), rather than continuing to delete
+  further, unrelated partitions after a rejection has already been decided.
+* `storageExpand` at the root path is **not supported** when partitioning is enabled (unlike GET/PUT/DELETE,
+  it has no scatter/gather fallback yet) and fails explicitly instead of silently behaving as if the root
+  collection were empty.
 
 Notes:
 * This flag is **disabled by default** to keep existing single-node/Sentinel deployments unaffected.
@@ -299,6 +304,10 @@ Notes:
   using `cleanup-cluster.lua` (see above) for each partition.
 * This setting is only relevant when running against Redis Cluster. It is safe, but unnecessary, to enable
   against a single-node Redis or Sentinel setup.
+* If `redisClusterPartitioningEnabled` is `true`, `RestStorageMod` runs the migration (see below) on every
+  boot before serving traffic. If that migration fails, startup itself fails rather than silently
+  continuing with partitioning enabled - proceeding anyway could make pre-existing, not-yet-migrated data
+  permanently invisible to tagged-key-only reads/writes/deletes.
 
 #### Data Migration for Cluster Partitioning
 

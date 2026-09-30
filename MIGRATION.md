@@ -10,6 +10,14 @@ When you enable `redisClusterPartitioningEnabled`, the physical Redis key layout
 
 This change means existing data written in non-cluster mode will not be found by cluster-mode operations. The `MigrateTool` automates this key rewrite process.
 
+**Runs automatically at startup:** when REST Storage is wired up via `RestStorageMod` (the normal way of
+running this module) with `redisClusterPartitioningEnabled=true`, `MigrateTool` (with
+`ClusterPartitionMigrationTask` registered) is started automatically on every boot, before the module
+starts serving traffic - you do not need to wire it up yourself unless you are embedding these classes
+directly in a custom setup (see "Quick Start" below for that case). If that automatic migration fails,
+`RestStorageMod` now refuses to start rather than silently continuing with partitioning enabled, since
+doing so could make pre-existing, not-yet-migrated data permanently invisible.
+
 ## Architecture
 
 The migration tool provides:
@@ -168,11 +176,13 @@ migrateTool.addTask(new MyCustomMigrationTask());
 
 ## Distributed Locking
 
-The `MigrateTool` uses a Redis `SET NX PX` lock (refreshed every 2 seconds while held, 10 second TTL)
-so that only one instance runs the tasks while every other instance simply waits for the lock to be
-released - safe for multi-instance deployments, with automatic failover if the running instance
-crashes. See [docs/MigrateTool.md](docs/MigrateTool.md) for the full sequence diagram and a worked
-3-node example.
+The `MigrateTool` uses a Redis `SET NX PX` lock (refreshed every 2 seconds while held, 10 second TTL,
+value a random per-acquisition ownership token) so that only one instance runs the tasks while every
+other instance simply waits for the lock to be released - safe for multi-instance deployments, with
+automatic failover if the running instance crashes, and safe even if a stalled instance's TTL expires
+and another instance takes over mid-run (the ownership token prevents the stalled instance from later
+refreshing or deleting the new owner's lock). See [docs/MigrateTool.md](docs/MigrateTool.md) for the
+full sequence diagram, the ownership-token rationale, and a worked 3-node example.
 
 ## Troubleshooting
 

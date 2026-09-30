@@ -222,4 +222,52 @@ public class MigrateToolTest {
         context.assertEquals(foreignToken, jedis.get(MIGRATION_LOCK_KEY),
                 "the other instance's lock (different token) must survive both our refresh and release");
     }
+
+    /** Wraps a real {@link RedisProvider}, letting the first {@code allowedCalls} calls through and failing every
+     *  call after that - used to simulate a Redis connection failure kicking in partway through a flow. */
+    private static RedisProvider failingAfter(RedisProvider delegate, int allowedCalls) {
+        AtomicInteger callCount = new AtomicInteger();
+        return () -> {
+            if (callCount.getAndIncrement() >= allowedCalls) {
+                return Future.failedFuture(new RuntimeException("simulated redis connection failure"));
+            }
+            return delegate.redis();
+        };
+    }
+
+    @Test
+    public void failsWhenPollingForOtherInstancesMigrationCompletionFails(TestContext context) {
+        Task slowTask = new Task() {
+            @Override
+            public String getTaskKey() {
+                return "slow";
+            }
+
+            @Override
+            public Future<Boolean> run() {
+                Promise<Boolean> promise = Promise.promise();
+                vertx.setTimer(3_000, id -> promise.complete(true));
+                return promise.future();
+            }
+        };
+
+        // instance-a genuinely acquires and holds the lock for a while.
+        MigrateTool toolA = new MigrateTool(vertx, redisProvider, "instance-a").addTask(slowTask);
+        // instance-b's provider allows exactly one call (its own, failed, acquireLock attempt) and then
+        // fails every subsequent call - i.e. every call made while polling for instance-a's completion.
+        RedisProvider flakyProvider = failingAfter(redisProvider, 1);
+        MigrateTool toolBFlaky = new MigrateTool(vertx, flakyProvider, "instance-b").addTask(slowTask);
+
+        Async async = context.async(2);
+        toolA.start().onComplete(ar -> {
+            context.assertTrue(ar.succeeded());
+            async.countDown();
+        });
+        toolBFlaky.start().onComplete(ar -> {
+            context.assertTrue(ar.failed(),
+                    "a Redis failure while waiting for another instance's migration must not be reported as success");
+            async.countDown();
+        });
+        async.awaitSuccess(30_000);
+    }
 }

@@ -151,8 +151,14 @@ public class MigrateTool {
                 // Lock held by another instance - wait for it to complete
                 log.info("Migration already in progress on another instance, waiting (instanceId:{})", instanceId);
                 waitForOtherMigrationCompletion().onComplete(ar2 -> {
-                    log.info("Other instance migration completed (instanceId:{})", instanceId);
-                    migratePromise.complete();
+                    if (ar2.failed()) {
+                        log.error("Failed while waiting for other instance's migration to complete (instanceId:{})",
+                                instanceId, ar2.cause());
+                        migratePromise.fail(ar2.cause());
+                    } else {
+                        log.info("Other instance migration completed (instanceId:{})", instanceId);
+                        migratePromise.complete();
+                    }
                 });
             }
         });

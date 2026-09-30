@@ -129,6 +129,18 @@ public class RestStorageMod extends AbstractVerticle {
 
                 migrateTool.start().onComplete(migrateResult -> {
                     if (migrateResult.failed()) {
+                        if (moduleConfiguration.isRedisClusterPartitioningEnabled()) {
+                            // Unlike other (currently non-existent) migration tasks, failing to migrate
+                            // pre-existing (untagged) data before switching to tagged-only key access
+                            // would make that data silently invisible to GET/DELETE/cleanup from here on -
+                            // refuse to start rather than risk that.
+                            log.error("Migration failed while Redis Cluster partitioning is enabled; refusing to " +
+                                    "start RestStorageMod, since pre-existing (untagged) data could otherwise " +
+                                    "become invisible", migrateResult.cause());
+                            initPromise.fail(exceptionFactory.newException("Cluster partitioning migration failed",
+                                    migrateResult.cause()));
+                            return;
+                        }
                         log.warn("Migration failed, will continue to start the RestStorageMod anyway", migrateResult.cause());
                     } else {
                         log.info("Migration done, will continue to start the RestStorageMod");

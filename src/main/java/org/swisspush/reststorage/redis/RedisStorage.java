@@ -691,6 +691,15 @@ public class RedisStorage implements Storage {
     @Override
     public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
         PartitionContext partition = partitionContextFor(encodePath(path));
+        if (partitioningEnabled && partition.getTag() == null) {
+            // Root has no single tag to route this by (see PartitionContext#forPath), and unlike GET/DELETE
+            // (which scatter across every registered partition), storageExpand would need to group
+            // subResources by the tag each one individually maps to and merge per-tag results - not
+            // supported yet. Fail loudly instead of silently evaluating against the never-populated
+            // untagged root key (which would look like an empty collection).
+            error(handler, "storageExpand at root is not supported when Redis Cluster partitioning is enabled");
+            return;
+        }
         List<String> keys = Collections.singletonList(partition.getKey());
         List<String> arguments = Arrays.asList(
                 redisResourcesPrefix,

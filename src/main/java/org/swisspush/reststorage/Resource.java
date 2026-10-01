@@ -15,6 +15,15 @@ public class Resource implements Comparable<Resource>{
     public boolean invalid = false;
     public boolean rejected = false;
     public boolean error = false;
+    // Set (currently only by RedisStorage's DELETE handling) when the operation performed no actual
+    // change because a resource is currently lock-protected under LockMode.SILENT by a different
+    // owner - as opposed to LockMode.REJECT (see `rejected`), a silent lock deliberately reports back
+    // as if nothing were wrong (this default `exists = true`/`error = false`/`rejected = false`
+    // combination is preserved for full backward compatibility with existing callers), but callers
+    // that need to tell "genuinely deleted/absent" apart from "silently left untouched" - e.g. to
+    // decide whether it is safe to prune a Redis Cluster partition registry entry - can check this
+    // flag instead.
+    public boolean locked = false;
     public String invalidMessage;
     public String errorMessage;
 

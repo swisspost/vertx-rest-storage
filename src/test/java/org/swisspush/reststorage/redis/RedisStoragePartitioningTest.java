@@ -1,0 +1,997 @@
+package org.swisspush.reststorage.redis;
+
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.unit.Async;
+import io.vertx.ext.unit.TestContext;
+import io.vertx.ext.unit.junit.VertxUnitRunner;
+import io.vertx.redis.client.Command;
+import io.vertx.redis.client.RedisAPI;
+import io.vertx.redis.client.Response;
+import io.vertx.redis.client.impl.types.BulkType;
+import io.vertx.redis.client.impl.types.MultiType;
+import io.vertx.redis.client.impl.types.NumberType;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.swisspush.reststorage.DocumentResource;
+import org.swisspush.reststorage.Resource;
+import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
+import org.swisspush.reststorage.util.ModuleConfiguration;
+
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.Function;
+
+import static org.junit.Assert.*;
+
+/**
+ * Tests for the Redis Cluster path-based partitioning feature ({@code redisClusterPartitioningEnabled}).
+ *
+ * <p>These tests use a hand-written {@link RedisAPI} fake (built directly on the {@code send(Command, String...)}
+ * method that every other {@code RedisAPI} command defaults onto) instead of Mockito, because the Mockito version
+ * pinned in this project (1.10.19 / cglib) is incompatible with the JDK used to run these tests in this
+ * environment (see {@code RedisStorageTest} - unrelated, pre-existing issue).</p>
+ */
+@RunWith(VertxUnitRunner.class)
+public class RedisStoragePartitioningTest {
+
+    private Vertx vertx;
+    private RestStorageExceptionFactory exceptionFactory;
+
+    @Before
+    public void setUp() {
+        vertx = Vertx.vertx();
+        exceptionFactory = RestStorageExceptionFactory.newRestStorageThriftyExceptionFactory();
+    }
+
+    @After
+    public void tearDown(TestContext context) {
+        vertx.close(context.asyncAssertSuccess());
+    }
+
+    // ------------------------------------------------------------------
+    // helpers
+    // ------------------------------------------------------------------
+
+    private static Response bulk(String s) {
+        return BulkType.create(Buffer.buffer(s), false);
+    }
+
+    private static Response number(long n) {
+        return NumberType.create(n);
+    }
+
+    private static Response multiResponse(Response... items) {
+        MultiType m = MultiType.create(items.length, false);
+        for (Response r : items) {
+            m.add(r);
+        }
+        return m;
+    }
+
+    /**
+     * Minimal, dependency-free fake of {@link RedisAPI}. Every RedisAPI command (evalsha, sadd, smembers,
+     * zcount, script, ...) is a default method that ends up calling the single abstract
+     * {@link #send(Command, String...)} method, so overriding just that (plus {@link #close()}) is enough
+     * to intercept every command used by {@link RedisStorage}.
+     */
+    private static class FakeRedisAPI implements RedisAPI {
+        final List<Invocation> invocations = new ArrayList<>();
+        private final Function<Invocation, Response> handler;
+
+        FakeRedisAPI(Function<Invocation, Response> handler) {
+            this.handler = handler;
+        }
+
+        @Override
+        public void close() {
+            // no-op
+        }
+
+        @Override
+        public Future<Response> send(Command command, String... args) {
+            Invocation invocation = new Invocation(command, Arrays.asList(args));
+            invocations.add(invocation);
+            // "script exists" is always answered positively so RedisStorage's constructor-time
+            // script preload never tries to actually load a script body through this fake.
+            if (command == Command.SCRIPT && !invocation.args.isEmpty() && "exists".equals(invocation.args.get(0))) {
+                return Future.succeededFuture(multiResponse(number(1)));
+            }
+            return Future.succeededFuture(handler.apply(invocation));
+        }
+
+        List<Invocation> byCommand(Command command) {
+            List<Invocation> result = new ArrayList<>();
+            for (Invocation invocation : invocations) {
+                if (invocation.command == command) {
+                    result.add(invocation);
+                }
+            }
+            return result;
+        }
+    }
+
+    private static class Invocation {
+        final Command command;
+        final List<String> args;
+
+        Invocation(Command command, List<String> args) {
+            this.command = command;
+            this.args = args;
+        }
+    }
+
+    private RedisStorage newStorage(boolean partitioningEnabled, FakeRedisAPI api) {
+        ModuleConfiguration config = new ModuleConfiguration().redisClusterPartitioningEnabled(partitioningEnabled);
+        RedisProvider provider = () -> Future.succeededFuture(api);
+        return new RedisStorage(vertx, config, provider, exceptionFactory);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T invokePrivate(Object target, String methodName, Class<?>[] paramTypes, Object... args) throws Exception {
+        Method m = RedisStorage.class.getDeclaredMethod(methodName, paramTypes);
+        m.setAccessible(true);
+        return (T) m.invoke(target, args);
+    }
+
+    // ------------------------------------------------------------------
+    // PartitionContext (public class) - derivePartitionTag() / forPath()
+    // ------------------------------------------------------------------
+
+    @Test
+    public void derivePartitionTagReturnsFirstSegment() {
+        assertEquals("project", PartitionContext.derivePartitionTag(":project:server:test"));
+        assertEquals("project", PartitionContext.derivePartitionTag("project:server:test"));
+        assertEquals("a", PartitionContext.derivePartitionTag(":a"));
+    }
+
+    @Test
+    public void derivePartitionTagReturnsNullForEmptyOrRootPath() {
+        assertNull(PartitionContext.derivePartitionTag(""));
+        assertNull(PartitionContext.derivePartitionTag(":"));
+        assertNull(PartitionContext.derivePartitionTag("::"));
+    }
+
+    @Test
+    public void derivePartitionTagPassesThroughAlreadyTaggedSegment() {
+        // A segment that is already fully wrapped in a single hash tag (e.g. re-derived from a key
+        // ClusterPartitionMigrationTask already renamed, or re-visited via Redis SCAN's at-least-once
+        // guarantee) must be recognized and passed through unchanged - re-deriving the tag must be a
+        // true no-op, or every re-visit would wrap the key again and corrupt it.
+        assertEquals("weird", PartitionContext.derivePartitionTag(":{weird}:server"));
+        // A literal "{}" segment is NOT treated as an already-tagged/empty-content case, since
+        // forPath() never itself produces an empty tag - it must be routable as ordinary raw content
+        // (escaped like any other segment containing braces), distinct from root/empty.
+        assertNotNull(PartitionContext.derivePartitionTag(":{}:server"));
+        assertNotEquals(PartitionContext.derivePartitionTag(":{}:server"),
+                PartitionContext.derivePartitionTag(":server"));
+    }
+
+    @Test
+    public void derivePartitionTagEscapesStrayLiteralBracesToAvoidCollisions() {
+        // "foo" and "fo{o}" must never collapse onto the same tag/key: the stray (not single-wrapping)
+        // braces in "fo{o}" are escaped, not stripped.
+        String plain = PartitionContext.derivePartitionTag(":foo:server");
+        String withStrayBraces = PartitionContext.derivePartitionTag(":fo{o}:server");
+        assertEquals("foo", plain);
+        assertNotEquals(plain, withStrayBraces);
+    }
+
+    @Test
+    public void derivePartitionTagEscapeSchemeIsInjectiveEvenWhenRawSegmentContainsTheEscapeMarker() {
+        // A naive fixed one-for-one character substitution (e.g. always replacing '{' with a fixed
+        // placeholder character) would collide whenever a raw segment already contains that literal
+        // placeholder character. The actual (JSON-Pointer-style) scheme escapes the marker itself
+        // first, so this must never collide, regardless of what the raw segment already contains.
+        String segmentWithLiteralBrace = ":fo{o:server"; // segment "fo{o" (unbalanced brace)
+        String segmentWithLiteralMarkerCharacter = ":fo\u00A61o:server"; // segment "fo¦1o"
+        assertNotEquals(
+                PartitionContext.derivePartitionTag(segmentWithLiteralBrace),
+                PartitionContext.derivePartitionTag(segmentWithLiteralMarkerCharacter));
+    }
+
+    @Test
+    public void unescapeBracesIsTheExactInverseOfEscapeBracesForOrdinaryRawSegments() throws Exception {
+        // unescapeBraces() is used to recover the original path segment name (e.g. for display in a
+        // root collection listing) from a tag produced by escapeBraces() via derivePartitionTag(). For
+        // any segment that actually went through escapeBraces() (i.e. wasn't itself already shaped like
+        // a non-empty {tag}, see derivePartitionTagPassesThroughAlreadyTaggedSegment), round-tripping
+        // through escape then unescape must reproduce the exact original segment.
+        assertRoundTrips("foo");
+        assertRoundTrips("fo{o}");
+        assertRoundTrips("{}");
+        assertRoundTrips("fo\u00A61o");
+        assertRoundTrips("fo{o");
+        assertRoundTrips("weird\u00A6\u00A6}{}}");
+    }
+
+    private static void assertRoundTrips(String rawSegment) throws Exception {
+        Method escapeBraces = PartitionContext.class.getDeclaredMethod("escapeBraces", String.class);
+        escapeBraces.setAccessible(true);
+        String escaped = (String) escapeBraces.invoke(null, rawSegment);
+        String roundTripped = PartitionContext.unescapeBraces(escaped);
+        assertEquals(rawSegment, roundTripped);
+    }
+
+    @Test
+    public void forPathDisabledLeavesKeyAndExpirableSetUnchanged() {
+        PartitionContext ctx = PartitionContext.forPath(":project:server:test", false, "rest-storage:expirable");
+        assertEquals(":project:server:test", ctx.getKey());
+        assertEquals("rest-storage:expirable", ctx.getExpirableSetKey());
+        assertNull(ctx.getTag());
+    }
+
+    @Test
+    public void forPathEnabledTagsKeyAndExpirableSet() {
+        PartitionContext ctx = PartitionContext.forPath(":project:server:test", true, "rest-storage:expirable");
+        assertEquals(":{project}:server:test", ctx.getKey());
+        assertEquals("rest-storage:expirable:{project}", ctx.getExpirableSetKey());
+        assertEquals("project", ctx.getTag());
+    }
+
+    @Test
+    public void forPathEnabledButRootPathFallsBackToUntagged() {
+        PartitionContext ctx = PartitionContext.forPath("", true, "rest-storage:expirable");
+        assertEquals("", ctx.getKey());
+        assertEquals("rest-storage:expirable", ctx.getExpirableSetKey());
+        assertNull(ctx.getTag());
+    }
+
+    @Test
+    public void forPathEnabledPreservesLeadingSeparatorsAndHierarchy() {
+        PartitionContext ctx = PartitionContext.forPath(":invoices:2024:01:doc1", true, "rest-storage:expirable");
+        // Same number of ':' separated segments as before, only the first real segment is wrapped.
+        assertEquals(":{invoices}:2024:01:doc1", ctx.getKey());
+        assertEquals(
+                countOccurrences(":invoices:2024:01:doc1", ':'),
+                countOccurrences(ctx.getKey(), ':')
+        );
+    }
+
+    private static long countOccurrences(String s, char c) {
+        return s.chars().filter(ch -> ch == c).count();
+    }
+
+    // ------------------------------------------------------------------
+    // registerPartitionTag()
+    // ------------------------------------------------------------------
+
+    @Test
+    public void registerPartitionTagNoOpWhenDisabled() throws Exception {
+        FakeRedisAPI api = new FakeRedisAPI(inv -> number(1));
+        RedisStorage storage = newStorage(false, api);
+        int before = api.invocations.size();
+        invokePrivate(storage, "registerPartitionTag", new Class<?>[]{RedisAPI.class, String.class}, api, "project");
+        assertEquals("no additional redis calls expected", before, api.invocations.size());
+    }
+
+    @Test
+    public void registerPartitionTagNoOpWhenTagIsNull() throws Exception {
+        FakeRedisAPI api = new FakeRedisAPI(inv -> number(1));
+        RedisStorage storage = newStorage(true, api);
+        int before = api.invocations.size();
+        invokePrivate(storage, "registerPartitionTag", new Class<?>[]{RedisAPI.class, String.class}, api, null);
+        assertEquals(before, api.invocations.size());
+    }
+
+    @Test
+    public void registerPartitionTagSaddsTagIntoRegistryWhenEnabled() throws Exception {
+        FakeRedisAPI api = new FakeRedisAPI(inv -> number(1));
+        RedisStorage storage = newStorage(true, api);
+        invokePrivate(storage, "registerPartitionTag", new Class<?>[]{RedisAPI.class, String.class}, api, "project");
+
+        List<Invocation> saddCalls = api.byCommand(Command.SADD);
+        assertEquals(1, saddCalls.size());
+        assertEquals(Arrays.asList("rest-storage:locks-partitions", "project"), saddCalls.get(0).args);
+    }
+
+    // ------------------------------------------------------------------
+    // end-to-end: get()/put()/delete()/storageExpand() key tagging
+    // ------------------------------------------------------------------
+
+    @Test
+    public void getUsesTaggedKeyAndExpirableSetWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/project/server/test", null, 0, -1, resource -> {
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            List<String> args = evalshaCalls.get(0).args;
+            // args layout: [sha, numkeys, key1, resourcesPrefix, collectionsPrefix, expirableSet, ...]
+            context.assertEquals("1", args.get(1));
+            context.assertEquals(":{project}:server:test", args.get(2));
+            context.assertEquals("rest-storage:expirable:{project}", args.get(5));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void getUsesPlainKeyWhenPartitioningDisabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(false, api);
+
+        storage.get("/project/server/test", null, 0, -1, resource -> {
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            List<String> args = evalshaCalls.get(0).args;
+            context.assertEquals(":project:server:test", args.get(2));
+            context.assertEquals("rest-storage:expirable", args.get(5));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void storageExpandUsesTaggedKeyWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.storageExpand("/invoices/2024", null, List.of("doc1"), resource -> {
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            List<String> args = evalshaCalls.get(0).args;
+            context.assertEquals(":{invoices}:2024", args.get(2));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void storageExpandAtRootFailsInsteadOfSilentlyLookingEmptyWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.storageExpand("/", null, List.of("project", "invoices"), resource -> {
+            context.assertTrue(resource.error);
+            // Must never have evaluated STORAGE_EXPAND against the never-populated untagged root key.
+            context.assertTrue(api.byCommand(Command.EVALSHA).isEmpty());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void putAtRootFailsInsteadOfSilentlyWritingToTheUntaggedRootKeyWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.put("/", null, false, -1, resource -> {
+            context.assertTrue(resource.error);
+            // Must never have evaluated PUT against the never-populated untagged root key.
+            context.assertTrue(api.byCommand(Command.EVALSHA).isEmpty());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteUsesTaggedKeyAndExpirableSetWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/server/test", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, false, resource -> {
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            List<String> args = evalshaCalls.get(0).args;
+            context.assertEquals(":{project}:server:test", args.get(2));
+            // expirableSet is argument index 3 (0-based) within the DELETE argument list, i.e. index 7 overall
+            // (sha, numkeys, key, resourcesPrefix, collectionsPrefix, deltaResourcesPrefix, deltaEtagsPrefix, expirableSet)
+            context.assertEquals("rest-storage:expirable:{project}", args.get(7));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteReportsErrorInsteadOfSilentSuccessWhenEvalshaFailsWithGenuineRedisError(TestContext context) {
+        // A non-NOSCRIPT evalsha failure (e.g. a real Redis/Lua error, or CROSSSLOT) must be surfaced as
+        // an error, not fall through to a bare `new Resource()` (which defaults to exists=true, i.e.
+        // reported as a successful deletion) - this is the safety net the root-DELETE halt-on-error fix
+        // (see deleteRootStopsAtFirstRejectedPartitionInsteadOfDestroyingTheRest) depends on.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("ok")) {
+            @Override
+            public Future<Response> send(Command command, String... args) {
+                if (command == Command.EVALSHA) {
+                    invocations.add(new Invocation(command, Arrays.asList(args)));
+                    return Future.failedFuture(new RuntimeException("simulated redis error"));
+                }
+                return super.send(command, args);
+            }
+        };
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/server/test", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, false, resource -> {
+            context.assertTrue(resource.error,
+                    "a genuine (non-NOSCRIPT) evalsha failure must be reported as an error, not silent success");
+            context.assertEquals("redisAPI.evalsha() failed", resource.errorMessage);
+            // Only one attempt must have been made - a genuine error must not be treated as NOSCRIPT and
+            // trigger a script-reload retry loop.
+            context.assertEquals(1, api.byCommand(Command.EVALSHA).size());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathPrunesRegistryOnSuccessWhenPartitioningEnabled(TestContext context) {
+        // Unlike a root DELETE (deleteAllPartitions), a direct DELETE targeting exactly a partition's
+        // top-level path (e.g. "/project") never went through deletePartitionsSequentially, so it must
+        // prune the partition registry itself once the whole partition is confirmed deleted - otherwise
+        // the tag would stay registered forever, forcing every future root GET/DELETE/cleanup to keep
+        // iterating over a now-nonexistent partition.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("deleted"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertFalse(resource.error);
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(1, sremCalls.size());
+            context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "project"), sremCalls.get(0).args);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteOnNestedPathDoesNotPruneRegistryEvenOnSuccessWhenPartitioningEnabled(TestContext context) {
+        // A DELETE on a path nested inside a partition (not the partition's own top-level segment) only
+        // ever removes part of that partition's data - the partition itself may still have other data
+        // left, so its tag must stay registered.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("deleted"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/server/test", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a nested (non-top-level) delete must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteOnNestedPathWhoseLastSegmentEndsInClosingBraceDoesNotPruneRegistry(TestContext context) {
+        // Regression test: pruning must be decided structurally (PartitionContext#isTopLevel), not via
+        // a getKey().endsWith("}") string heuristic - otherwise an ordinary nested resource whose own
+        // last path segment happens to literally end in '}' (e.g. "/project/name}") would be
+        // mis-detected as "the whole 'project' partition was deleted", wrongly SREM-ing the still-live
+        // "project" tag out of the registry while the rest of its data remains present.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("deleted"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project/name}", "", org.swisspush.reststorage.util.LockMode.SILENT, 0,
+                false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a nested delete whose last segment ends in '}' must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathPrunesRegistryOnNotFoundWhenPartitioningEnabled(TestContext context) {
+        // Self-healing: if a direct DELETE targets exactly a partition's top-level path but the
+        // underlying data is already gone (e.g. previously emptied via a nested delete, which does not
+        // itself prune the registry - see deleteOnNestedPathDoesNotPruneRegistryEvenOnSuccessWhenPartitioningEnabled),
+        // the stale tag must still be pruned, mirroring deletePartitionsSequentially's same self-healing
+        // behavior for the root-scatter DELETE path.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk("notFound"));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertFalse(resource.exists);
+            context.assertFalse(resource.error);
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(1, sremCalls.size());
+            context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "project"), sremCalls.get(0).args);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenResourceReappearedConcurrently(
+            TestContext context) {
+        // Regression test for the registry SREM/SADD race: if a concurrent PUT to a sibling resource
+        // under the same tag lands (and its own SADD registers the tag) strictly between this DELETE's
+        // Lua script finishing and its registry-pruning step, the tag must NOT be pruned - otherwise the
+        // still-live data would become invisible to root GET/DELETE/cleanup until yet another PUT
+        // happens to re-register it. This is simulated by having the pre-SREM EXISTS re-check on the
+        // tagged resources key report the resource as (again) present.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EXISTS) {
+                if ("rest-storage:resources:{project}".equals(inv.args.get(0))) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("deleted");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "must not prune a tag whose data reappeared concurrently before the SREM was issued");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenCollectionReappearedConcurrently(
+            TestContext context) {
+        // Same race as above, but the sibling resource that concurrently reappeared under the tag is a
+        // collection rather than a top-level document.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EXISTS) {
+                if ("rest-storage:collections:{project}".equals(inv.args.get(0))) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("deleted");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "must not prune a tag whose data reappeared concurrently before the SREM was issued");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenSilentlyLocked(TestContext context) {
+        // A "silent" result (LockMode.SILENT lock held by a different owner - nothing was actually
+        // deleted) must not be mistaken for a successful, whole-partition removal, the same as a
+        // rejected delete already isn't.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk(org.swisspush.reststorage.util.LockMode.SILENT.text()));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.locked);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a silently-locked delete must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenRejected(TestContext context) {
+        // A rejected/errored delete must not be mistaken for a successful, whole-partition removal.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> bulk(org.swisspush.reststorage.util.LockMode.REJECT.text()));
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/project", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.rejected);
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty(),
+                    "a rejected delete must never prune the partition registry");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void putRegistersPartitionTagOnSuccessWhenPartitioningEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EVALSHA) {
+                return bulk("OK");
+            }
+            return number(1);
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.put("/project/server/test", "someetag", false, -1, resource -> {
+            DocumentResource d = (DocumentResource) resource;
+            d.endHandler = event -> {
+                List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+                context.assertEquals(1, evalshaCalls.size());
+                context.assertEquals(":{project}:server:test", evalshaCalls.get(0).args.get(2));
+
+                List<Invocation> saddCalls = api.byCommand(Command.SADD);
+                context.assertEquals(1, saddCalls.size());
+                context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "project"), saddCalls.get(0).args);
+                async.complete();
+            };
+            d.closeHandler.handle(null);
+        });
+    }
+
+    @Test
+    public void putDoesNotRegisterPartitionTagWhenPartitioningDisabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EVALSHA) {
+                return bulk("OK");
+            }
+            return number(1);
+        });
+        RedisStorage storage = newStorage(false, api);
+
+        storage.put("/project/server/test", "someetag", false, -1, resource -> {
+            DocumentResource d = (DocumentResource) resource;
+            d.endHandler = event -> {
+                context.assertEquals(":project:server:test", api.byCommand(Command.EVALSHA).get(0).args.get(2));
+                context.assertTrue(api.byCommand(Command.SADD).isEmpty());
+                async.complete();
+            };
+            d.closeHandler.handle(null);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // cleanup() / cleanupAllPartitions()
+    // ------------------------------------------------------------------
+
+    @Test
+    public void cleanupUsesSingleGlobalExpirableSetWhenPartitioningDisabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.EVALSHA) {
+                return number(0); // nothing cleaned this run -> triggers zcount and completion
+            }
+            if (inv.command == Command.ZCOUNT) {
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(false, api);
+
+        storage.cleanup(resource -> {
+            // disabled path must never touch the partition registry
+            context.assertTrue(api.byCommand(Command.SMEMBERS).isEmpty());
+            List<Invocation> zcountCalls = api.byCommand(Command.ZCOUNT);
+            context.assertEquals(1, zcountCalls.size());
+            context.assertEquals("rest-storage:expirable", zcountCalls.get(0).args.get(0));
+            async.complete();
+        }, "100");
+    }
+
+    @Test
+    public void cleanupIteratesAllRegisteredPartitionsWhenEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                return number(0); // nothing cleaned this run for either partition
+            }
+            if (inv.command == Command.ZCOUNT) {
+                String expirableSetArg = inv.args.get(0);
+                if ("rest-storage:expirable:{project}".equals(expirableSetArg)) {
+                    return number(3);
+                } else if ("rest-storage:expirable:{invoices}".equals(expirableSetArg)) {
+                    return number(2);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.cleanup(resource -> {
+            context.assertEquals(1, api.byCommand(Command.SMEMBERS).size());
+
+            List<Invocation> zcountCalls = api.byCommand(Command.ZCOUNT);
+            context.assertEquals(2, zcountCalls.size());
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(2, evalshaCalls.size());
+            for (Invocation invocation : evalshaCalls) {
+                List<String> args = invocation.args;
+                context.assertEquals("1", args.get(1));
+                context.assertTrue(
+                        "rest-storage:expirable:{project}".equals(args.get(2))
+                                || "rest-storage:expirable:{invoices}".equals(args.get(2))
+                );
+            }
+
+            DocumentResource d = resource;
+            Buffer buf = Buffer.buffer();
+            d.readStream.endHandler(nothing -> {
+                JsonObject json = new JsonObject(buf.toString());
+                context.assertEquals(0L, json.getLong("cleanedResources"));
+                context.assertEquals(5, json.getInteger("expiredResourcesLeft"));
+                async.complete();
+            });
+            d.readStream.handler(buf::appendBuffer);
+        }, "100");
+    }
+
+    @Test
+    public void cleanupWithNoRegisteredPartitionsCompletesWithZeroResult(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse();
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.cleanup(resource -> {
+            DocumentResource d = resource;
+            Buffer buf = Buffer.buffer();
+            d.readStream.endHandler(nothing -> {
+                JsonObject json = new JsonObject(buf.toString());
+                context.assertEquals(0L, json.getLong("cleanedResources"));
+                context.assertEquals(0, json.getInteger("expiredResourcesLeft"));
+                async.complete();
+            });
+            d.readStream.handler(buf::appendBuffer);
+        }, "100");
+    }
+
+    // ------------------------------------------------------------------
+    // root ("/") GET/DELETE scatter-gather when partitioning is enabled
+    // ------------------------------------------------------------------
+
+    @Test
+    public void getRootScattersAcrossRegisteredPartitionsWhenEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EXISTS) {
+                String key = inv.args.get(0);
+                if ("rest-storage:resources:{project}".equals(key)) {
+                    return number(1);
+                }
+                if ("rest-storage:collections:{invoices}".equals(key)) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/", null, 0, -1, resource -> {
+            // root GET must never invoke the tagged get.lua script (there is no single tag to route by)
+            context.assertTrue(api.byCommand(Command.EVALSHA).isEmpty());
+            context.assertEquals(1, api.byCommand(Command.SMEMBERS).size());
+
+            context.assertTrue(resource instanceof org.swisspush.reststorage.CollectionResource);
+            List<Resource> items = ((org.swisspush.reststorage.CollectionResource) resource).items;
+            context.assertEquals(2, items.size());
+            for (Resource item : items) {
+                if ("project".equals(item.name)) {
+                    context.assertTrue(item instanceof DocumentResource);
+                } else if ("invoices".equals(item.name)) {
+                    context.assertTrue(item instanceof org.swisspush.reststorage.CollectionResource);
+                } else {
+                    context.fail("unexpected item: " + item.name);
+                }
+            }
+            async.complete();
+        });
+    }
+
+    @Test
+    public void getRootUnescapesPartitionTagBackToOriginalNameWhenListingChildren(TestContext context) {
+        // Regression test: the partition registry stores the *escaped* tag (see
+        // PartitionContext#escapeBraces), but a root GET listing must show clients the original,
+        // unescaped path segment name they created - not PartitionContext's internal encoded form.
+        Async async = context.async();
+        // "foo{bar}" escapes to "foo¦1bar¦2" (see PartitionContext#escapeBraces).
+        String escapedTag = "foo\u00A61bar\u00A62";
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk(escapedTag));
+            }
+            if (inv.command == Command.EXISTS) {
+                String key = inv.args.get(0);
+                if (("rest-storage:resources:{" + escapedTag + "}").equals(key)) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/", null, 0, -1, resource -> {
+            context.assertTrue(resource instanceof org.swisspush.reststorage.CollectionResource);
+            List<Resource> items = ((org.swisspush.reststorage.CollectionResource) resource).items;
+            context.assertEquals(1, items.size());
+            context.assertEquals("foo{bar}", items.get(0).name,
+                    "root listing must show the original raw path segment, not the internal escaped tag");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void getRootReturnsNotFoundWhenNoPartitionsRegistered(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse();
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.get("/", null, 0, -1, resource -> {
+            context.assertFalse(resource.exists);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootScattersAcrossRegisteredPartitionsAndPrunesRegistryWhenEnabled(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                return bulk("deleted");
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertFalse(resource.error);
+            context.assertFalse(resource.rejected);
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(2, evalshaCalls.size());
+            for (Invocation invocation : evalshaCalls) {
+                context.assertTrue(
+                        ":{project}".equals(invocation.args.get(2)) || ":{invoices}".equals(invocation.args.get(2)));
+            }
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(2, sremCalls.size());
+            for (Invocation invocation : sremCalls) {
+                context.assertEquals("rest-storage:locks-partitions", invocation.args.get(0));
+            }
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootDoesNotPruneATagWhoseDataReappearedConcurrentlyDuringTheScatterDelete(TestContext context) {
+        // Same registry SREM/SADD race as deleteDirectlyOnPartitionTopLevelPathDoesNotPruneRegistryWhenResourceReappearedConcurrently,
+        // but exercised via the root-scatter DELETE path (deletePartitionsSequentially) instead of a
+        // direct top-level DELETE: "invoices" must still be pruned normally, while "project" - whose
+        // tagged resources key the pre-SREM EXISTS re-check reports as (again) present, simulating a
+        // concurrent sibling PUT's SADD landing in between - must be left registered.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                return bulk("deleted");
+            }
+            if (inv.command == Command.EXISTS) {
+                if ("rest-storage:resources:{project}".equals(inv.args.get(0))) {
+                    return number(1);
+                }
+                return number(0);
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.exists);
+            context.assertFalse(resource.error);
+
+            List<Invocation> sremCalls = api.byCommand(Command.SREM);
+            context.assertEquals(1, sremCalls.size());
+            context.assertEquals(Arrays.asList("rest-storage:locks-partitions", "invoices"), sremCalls.get(0).args);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootReturnsNotFoundWhenNoPartitionsRegistered(TestContext context) {
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse();
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertFalse(resource.exists);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootStopsAtFirstRejectedPartitionInsteadOfDestroyingTheRest(TestContext context) {
+        // "project" is scanned before "invoices" (SMEMBERS returns them in that order below) and refuses
+        // the delete (notEmpty); this must not be papered over by continuing on and deleting "invoices"
+        // anyway - the scan has to stop right there.
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                if (":{project}".equals(inv.args.get(2))) {
+                    return bulk("notEmpty");
+                }
+                return bulk("deleted");
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.error);
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            context.assertEquals(":{project}", evalshaCalls.get(0).args.get(2));
+
+            // "invoices" must never have been touched (no delete attempt, no registry pruning).
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void deleteRootStopsAtFirstSilentlyLockedPartitionInsteadOfPruningItsRegistryEntry(TestContext context) {
+        // "project" is scanned before "invoices" and is silently lock-protected (nothing actually
+        // deleted); this must be treated the same as "notEmpty"/rejected - halt immediately, and must
+        // NOT prune "project"'s still-fully-intact registry entry, nor continue on to "invoices".
+        Async async = context.async();
+        FakeRedisAPI api = new FakeRedisAPI(inv -> {
+            if (inv.command == Command.SMEMBERS) {
+                return multiResponse(bulk("project"), bulk("invoices"));
+            }
+            if (inv.command == Command.EVALSHA) {
+                if (":{project}".equals(inv.args.get(2))) {
+                    return bulk(org.swisspush.reststorage.util.LockMode.SILENT.text());
+                }
+                return bulk("deleted");
+            }
+            return bulk("");
+        });
+        RedisStorage storage = newStorage(true, api);
+
+        storage.delete("/", "", org.swisspush.reststorage.util.LockMode.SILENT, 0, false, true, resource -> {
+            context.assertTrue(resource.locked);
+
+            List<Invocation> evalshaCalls = api.byCommand(Command.EVALSHA);
+            context.assertEquals(1, evalshaCalls.size());
+            context.assertEquals(":{project}", evalshaCalls.get(0).args.get(2));
+
+            // Neither "project" (silently locked, still fully intact) nor "invoices" (never reached)
+            // may be pruned from the registry.
+            context.assertTrue(api.byCommand(Command.SREM).isEmpty());
+            async.complete();
+        });
+    }
+}

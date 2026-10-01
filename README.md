@@ -223,6 +223,7 @@ The following configuration values are available:
 | rejectStorageWriteOnLowMemory           | redis  | false                    | When set to _true_, PUT requests with the x-importance-level header can be rejected when memory gets low                              |
 | freeMemoryCheckIntervalMs               | redis  | 60000                    | The interval in milliseconds to calculate the actual memory usage                                                                     |
 | redisReadyCheckIntervalMs               | redis  | -1                       | The interval in milliseconds to calculate the "ready state" of redis. When value < 1, no "ready state" will be calculated             |
+| redisClusterPartitioningEnabled         | redis  | false                    | Enables path-based partitioning for Redis Cluster compatibility. See "Redis Cluster support" below                                    |
 | awsS3Region                             | s3     |                          | The region of AWS S3 server, with local service such localstack, also need set a valid region                                         |
 | s3BucketName                            | s3     |                          | The S3 bucket name                                                                                                                    |
 | s3AccessKeyId                           | s3     |                          | The s3 access key Id                                                                                                                  |
@@ -248,6 +249,99 @@ ModuleConfiguration config = with()
 
 JsonObject json = config.asJsonObject();
 ```
+
+### Redis Cluster support
+
+![Redis Cluster path-based partitioning](docs/images/redis-cluster-partitioning.svg)
+
+The Lua scripts used by this module (`get`, `put`, `del`, `cleanup`, `storageExpand`) access several Redis keys
+(resources, collections, locks, expirable set) per call. Redis Cluster requires that all keys touched by a single
+Lua script/EVALSHA call live on the same hash slot ("CROSSSLOT" error otherwise), which by default is not the case
+here because the various key prefixes hash independently.
+
+Setting `redisClusterPartitioningEnabled` to `true` fixes this by wrapping the first path segment of every resource
+path in a [Redis Cluster hash tag](https://redis.io/docs/latest/operations/cluster-tuning/#hash-tags) (e.g. path
+`/project/server/test` produces the key `:{project}:server:test` instead of `:project:server:test`). Because Redis
+Cluster only uses the substring inside the first `{}` for slot hashing, every key derived from the same top-level
+path segment (resources, collections, locks, and its portion of the expirable set) is routed to the same slot,
+making `get`, `put` and `del` cluster-safe for non-root paths **without any changes to `get.lua`** (see below for
+the dedicated `put-cluster.lua`/`del-cluster.lua` variants and the special handling of the root path). Different
+top-level path segments naturally land on different slots/nodes, so data is still distributed across the cluster.
+
+The periodic `cleanup` job is one exception: it needs to declare the (per-partition, hash-tagged) expirable set
+as a Redis Cluster key so the command is routed to the node owning that slot. To keep this cluster-only concern out
+of the plain `cleanup.lua` used for non-cluster/Sentinel deployments, a dedicated `cleanup-cluster.lua` (identical
+logic, cluster-routing aware) is used instead whenever `redisClusterPartitioningEnabled` is `true`; `cleanup.lua`
+itself is never changed by enabling this flag.
+
+The root path (`/`) is the other exception. It has no top-level path segment to hash-tag, so its own key would
+land on an unrelated slot from the (tagged) keys every partition actually writes to. Rather than tagging root with
+an artificial value (which would just break root listing, since every partition's `PUT` implicitly touches the
+same shared, untagged root collection entry), root `GET`, `PUT` and `DELETE` are handled specially when
+`redisClusterPartitioningEnabled` is `true`:
+* `put-cluster.lua` and `del-cluster.lua` are cluster-safe variants of `put.lua`/`del.lua` that skip touching the
+  shared untagged root collection entry entirely (they are otherwise identical to `put.lua`/`del.lua`, which
+  remain unchanged for non-cluster/Sentinel deployments). They are used for all writes/deletes below the root when
+  partitioning is enabled.
+* A root `GET` (listing) is resolved in Java by scattering single-key, cluster-safe `EXISTS` checks across every
+  known partition tag (tracked in a plain Redis set, updated on every successful `PUT`) and gathering the results
+  into a collection listing, instead of relying on the shared root key.
+* A root `DELETE` is resolved the same way: each known partition tag is deleted independently (via
+  `del-cluster.lua`), pruning the partition-tag registry as each partition becomes empty. Processing stops
+  at the first partition that rejects the delete (e.g. `notEmpty`), rather than continuing to delete
+  further, unrelated partitions after a rejection has already been decided.
+* `storageExpand` at the root path is **not supported** when partitioning is enabled (unlike GET/PUT/DELETE,
+  it has no scatter/gather fallback yet) and fails explicitly instead of silently behaving as if the root
+  collection were empty.
+
+Notes:
+* This flag is **disabled by default** to keep existing single-node/Sentinel deployments unaffected.
+* Enabling it **changes the physical Redis key names** (the top-level path segment becomes part of a hash tag), so
+  existing data written before enabling this flag will not be found afterwards. Plan a migration (e.g. re-write
+  existing keys, or start with a fresh keyspace) before switching this on for a deployment with existing data.
+* When enabled, the periodic `cleanup` job iterates over every partition (top-level path segment) that has ever
+  received a successful `PUT`, instead of scanning a single global expirable set, and aggregates the results,
+  using `cleanup-cluster.lua` (see above) for each partition.
+* This setting is only relevant when running against Redis Cluster. It is safe, but unnecessary, to enable
+  against a single-node Redis or Sentinel setup.
+* If `redisClusterPartitioningEnabled` is `true`, `RestStorageMod` runs the migration (see below) on every
+  boot before serving traffic. If that migration fails, startup itself fails rather than silently
+  continuing with partitioning enabled - proceeding anyway could make pre-existing, not-yet-migrated data
+  permanently invisible to tagged-key-only reads/writes/deletes. A genuine migration failure leaves a
+  permanent (non-expiring) lock marker in Redis, so every instance keeps failing to start until an
+  operator fixes the underlying issue and manually deletes `rest-storage:migration:lock` - see
+  [MIGRATION.md](MIGRATION.md) and [docs/MigrateTool.md](docs/MigrateTool.md) for details.
+
+#### Data Migration for Cluster Partitioning
+
+When enabling cluster partitioning on a deployment with existing data, use the `MigrateTool` to rewrite
+keys from non-cluster layout to cluster-compatible layout.
+
+**Quick Start:**
+```java
+MigrateTool migrateTool = new MigrateTool(vertx, redisProvider, "instance-1");
+migrateTool.addTask(new ClusterPartitionMigrationTask(redisProvider, config));
+migrateTool.start()
+    .onComplete(ar -> {
+        if (ar.succeeded()) {
+            // Enable redisClusterPartitioningEnabled = true
+        }
+    });
+```
+
+**Key features:**
+* Uses distributed Redis lock to ensure only one migration runs across cluster nodes
+* Automatically chains multiple tasks sequentially
+* Provides `Task` interface for custom migration logic
+* Handles multi-instance deployments safely
+* Idempotent: already-tagged keys are skipped, so re-running is a no-op
+
+**Important:** run the migration against the *pre-cluster* Redis (single-node or Sentinel), before switching
+the deployment to Redis Cluster. Keys are moved with server-side `RENAME` (atomic, binary-safe,
+TTL-preserving), which cannot move keys across hash slots. See [MIGRATION.md](MIGRATION.md) for the full key
+mapping and constraints.
+
+**For detailed migration instructions:** see [MIGRATION.md](MIGRATION.md)
 
 Properties not overridden will not be changed. Thus remaining default.
 

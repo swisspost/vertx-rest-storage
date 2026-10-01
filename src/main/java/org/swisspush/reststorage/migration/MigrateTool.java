@@ -1,0 +1,571 @@
+package org.swisspush.reststorage.migration;
+
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
+import io.vertx.redis.client.RedisAPI;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.swisspush.reststorage.migration.tasks.Task;
+import org.swisspush.reststorage.redis.RedisProvider;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Tool for coordinating and executing data migration tasks when enabling Redis Cluster partitioning.
+ * Ensures only one migration runs at a time across cluster nodes using a distributed lock in Redis.
+ *
+ * <p><b>Lock safety:</b> the lock value is a random token generated on each acquisition, not just a
+ * timestamp. Both the periodic TTL refresh and the final release use a Lua compare-and-swap script
+ * that only mutates the lock if it still holds this instance's token. This prevents a stalled
+ * instance (e.g. after a long GC pause during which the lock's TTL expired and another instance
+ * acquired it) from refreshing or deleting a lock that has since legitimately become owned by a
+ * different instance. If the refresh timer ever detects lost ownership, it stops itself and
+ * {@link #start()}'s future fails, since the migration's exclusivity guarantee can no longer be
+ * trusted for the remainder of that run.
+ * 
+ * <p>Usage example:
+ * <pre>
+ * MigrateTool migrateTool = new MigrateTool(vertx, redisProvider, "instance-1");
+ * migrateTool
+ *   .addTask(new ClusterPartitionMigrationTask(...))
+ *   .start()
+ *   .onComplete(ar -> {
+ *     if (ar.succeeded()) {
+ *       System.out.println("Migration completed");
+ *     } else {
+ *       System.out.println("Migration failed: " + ar.cause().getMessage());
+ *     }
+ *   });
+ * </pre>
+ */
+public class MigrateTool {
+    private static final Logger log = LoggerFactory.getLogger(MigrateTool.class);
+    
+    private static final int MIGRATION_LOCK_TIMEOUT_MS = 10_000;     // 10 seconds
+    private static final int MIGRATION_LOCK_REFRESH_MS = 2_000;      // 2 seconds
+    private static final String MIGRATION_LOCK_KEY = "rest-storage:migration:lock";
+
+    // Compare-and-swap scripts so a refresh/release only ever affects the lock this instance itself
+    // acquired (identified by ARGV[1], a per-acquisition random token) - never a lock some other
+    // instance has since acquired after ours expired (e.g. after a long GC pause).
+    private static final String REFRESH_LOCK_SCRIPT =
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('PEXPIRE', KEYS[1], ARGV[2]) " +
+            "else " +
+            "  return 0 " +
+            "end";
+    private static final String RELEASE_LOCK_SCRIPT =
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('DEL', KEYS[1]) " +
+            "else " +
+            "  return 0 " +
+            "end";
+    // Turns the lock into a permanent failure marker instead of releasing it: SET (without any
+    // TTL/EX/PX) both changes the value and implicitly clears the key's existing TTL, so the key
+    // never disappears on its own. This lets waiting instances (which only ever see the lock via
+    // GET/EXISTS) distinguish "still running" from "failed and stuck" instead of mistaking the
+    // failure for a completed migration once some TTL eventually expired it away.
+    private static final String MARK_LOCK_FAILED_SCRIPT =
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('SET', KEYS[1], ARGV[2]) " +
+            "else " +
+            "  return 0 " +
+            "end";
+    private static final String LOCK_FAILED_MARKER_SUFFIX = ":FAILED";
+    // Bounded retry policy for markLockAsFailed()'s CAS eval: a transient Redis connectivity blip
+    // must not silently let the lock expire (see markLockAsFailed()'s Javadoc) - retrying a few times
+    // with a short delay, while the refresh timer keeps extending the TTL in the meantime, gives
+    // Redis a real chance to recover before giving up.
+    private static final int MARK_FAILED_MAX_ATTEMPTS = 5;
+    private static final int MARK_FAILED_RETRY_DELAY_MS = 500;
+
+    private final String instanceId;
+    private final RedisProvider redisProvider;
+    private final Vertx vertx;
+    private final List<Task> tasks = new ArrayList<>();
+    private Long refreshTimerId = null;
+    // Random per-acquisition token (not just instanceId) so even two acquisitions by the very same
+    // instance (e.g. after a lost-and-reacquired lock) are never mistaken for one another.
+    private volatile String lockToken = null;
+    // Set by the refresh timer if it ever discovers the lock is no longer ours (lost ownership,
+    // e.g. TTL expired before a refresh could run). Once true, release must not touch the lock -
+    // it may already belong to another instance - and the migration result should be treated as
+    // unsafe/failed rather than successful.
+    private volatile boolean lockOwnershipLost = false;
+    // Counts consecutive refresh ticks that failed to even reach/execute the CAS check (Redis
+    // connection failure, or the eval call itself failing) - as opposed to a successful CAS check
+    // that found the lock content changed. Reset to 0 on any tick that completes the CAS check
+    // (regardless of outcome). Used to detect sustained connectivity loss spanning the lock TTL,
+    // which must be treated the same as a detected ownership loss (see startRefreshTimer): otherwise
+    // the lock can silently expire and be re-acquired by another instance while this instance keeps
+    // running under the false assumption of exclusive ownership.
+    private volatile int consecutiveRefreshFailures = 0;
+
+    /**
+     * Creates a new MigrateTool instance.
+     * 
+     * @param vertx the Vertx instance
+     * @param redisProvider the Redis provider for accessing Redis
+     * @param instanceId unique identifier for this instance (used for lock ownership)
+     */
+    public MigrateTool(Vertx vertx, RedisProvider redisProvider, String instanceId) {
+        this.vertx = vertx;
+        this.redisProvider = redisProvider;
+        this.instanceId = instanceId;
+    }
+
+    /**
+     * Adds a migration task to be executed.
+     * 
+     * @param task the task to add
+     * @return this MigrateTool instance for method chaining
+     */
+    public MigrateTool addTask(Task task) {
+        tasks.add(task);
+        return this;
+    }
+
+    /**
+     * Starts the migration process. If no tasks are registered, completes immediately.
+     * Attempts to acquire a distributed lock; if successful, runs all tasks sequentially.
+     * If the lock is already held by another instance, waits for that instance to complete.
+     * 
+     * @return a Future that completes when migration is done (whether locally or by another instance)
+     */
+    public Future<Void> start() {
+        if (tasks.isEmpty()) {
+            log.info("No migration tasks registered (instanceId:{})", instanceId);
+            return Future.succeededFuture();
+        }
+
+        Promise<Void> migratePromise = Promise.promise();
+        
+        acquireLock().onComplete(ar -> {
+            if (ar.failed()) {
+                log.error("Failed to acquire migration lock (instanceId:{})", instanceId, ar.cause());
+                migratePromise.fail(ar.cause());
+                return;
+            }
+            
+            if (ar.result()) {
+                // Lock acquired - run migration tasks
+                log.info("Migration lock acquired, starting tasks (instanceId:{})", instanceId);
+                lockOwnershipLost = false;
+                consecutiveRefreshFailures = 0;
+                startRefreshTimer();
+                runTasksSequentially()
+                    .onComplete(runResult -> {
+                        if (lockOwnershipLost) {
+                            // The lock (and thus our exclusive right to run tasks) may have been
+                            // held by another instance for part of the run - the result cannot be
+                            // trusted as a safe, exclusive migration outcome. We no longer own the
+                            // lock at all, so releaseLock()/markLockAsFailed() would both be no-ops
+                            // against it (CAS token mismatch) - just fail locally.
+                            stopRefreshTimer();
+                            migratePromise.fail("Migration lock ownership was lost during task execution "
+                                    + "(instanceId:" + instanceId + "); result is not trustworthy");
+                        } else if (runResult.failed()) {
+                            // Do NOT release the lock: turn it into a permanent failure marker instead,
+                            // so waiting instances see the failure explicitly rather than mistaking a
+                            // (would-be) released/expired lock for a completed migration. Requires manual
+                            // operator intervention (delete the lock key) before migration can be retried.
+                            markLockAsFailed().onComplete(markResult ->
+                                    migratePromise.fail(runResult.cause()));
+                        } else {
+                            releaseLock().onComplete(releaseResult -> migratePromise.complete());
+                        }
+                    });
+            } else {
+                // Lock held by another instance - wait for it to complete
+                log.info("Migration already in progress on another instance, waiting (instanceId:{})", instanceId);
+                waitForOtherMigrationCompletion().onComplete(ar2 -> {
+                    if (ar2.failed()) {
+                        log.error("Failed while waiting for other instance's migration to complete (instanceId:{})",
+                                instanceId, ar2.cause());
+                        migratePromise.fail(ar2.cause());
+                    } else {
+                        log.info("Other instance migration completed (instanceId:{})", instanceId);
+                        migratePromise.complete();
+                    }
+                });
+            }
+        });
+
+        return migratePromise.future();
+    }
+
+    /**
+     * Attempts to acquire the migration lock using SET NX PX. The lock value is a random,
+     * per-acquisition token (see {@link #lockToken}) rather than just a timestamp, so later
+     * refresh/release calls can verify (via a Lua compare-and-swap) that they still own the lock
+     * before mutating it.
+     * 
+     * @return Future completed with true if lock was acquired, false if already held
+     */
+    private Future<Boolean> acquireLock() {
+        Promise<Boolean> promise = Promise.promise();
+        
+        redisProvider.redis().onComplete(ar -> {
+            if (ar.failed()) {
+                log.error("Redis connection failed (instanceId:{})", instanceId, ar.cause());
+                promise.fail(ar.cause());
+                return;
+            }
+            
+            RedisAPI redisAPI = ar.result();
+            String token = instanceId + ":" + UUID.randomUUID();
+            
+            redisAPI.set(
+                Arrays.asList(
+                    MIGRATION_LOCK_KEY,
+                    token,
+                    "NX",
+                    "PX",
+                    String.valueOf(MIGRATION_LOCK_TIMEOUT_MS)
+                ),
+                setResult -> {
+                    if (setResult.failed()) {
+                        log.error("Failed to set migration lock (instanceId:{})", instanceId, setResult.cause());
+                        promise.fail(setResult.cause());
+                    } else {
+                        boolean acquired = setResult.result() != null;
+                        if (acquired) {
+                            lockToken = token;
+                        }
+                        promise.complete(acquired);
+                    }
+                }
+            );
+        });
+        
+        return promise.future();
+    }
+
+    /**
+     * Releases the migration lock, but only if it still holds the token this instance set when it
+     * acquired it (compare-and-swap via {@link #RELEASE_LOCK_SCRIPT}). This prevents deleting a lock
+     * that another instance has since legitimately acquired (e.g. after this instance's TTL expired
+     * during a long stall and {@link #lockOwnershipLost} was set by the refresh timer).
+     */
+    private Future<Void> releaseLock() {
+        stopRefreshTimer();
+        Promise<Void> promise = Promise.promise();
+        
+        redisProvider.redis().onComplete(ar -> {
+            if (ar.failed()) {
+                log.warn("Redis connection failed during lock release (instanceId:{})", instanceId, ar.cause());
+                promise.fail(ar.cause());
+                return;
+            }
+            
+            RedisAPI redisAPI = ar.result();
+            String token = lockToken;
+            if (token == null) {
+                // Nothing to release (we never held a token, e.g. acquireLock failed before setting it).
+                log.debug("No lock token to release (instanceId:{})", instanceId);
+                promise.complete();
+                return;
+            }
+            redisAPI.eval(Arrays.asList(RELEASE_LOCK_SCRIPT, "1", MIGRATION_LOCK_KEY, token), evalResult -> {
+                if (evalResult.failed()) {
+                    log.warn("Failed to delete migration lock (instanceId:{})", instanceId, evalResult.cause());
+                    promise.fail(evalResult.cause());
+                } else {
+                    boolean released = evalResult.result() != null && evalResult.result().toInteger() != 0;
+                    if (released) {
+                        log.info("Migration lock released (instanceId:{})", instanceId);
+                    } else {
+                        log.warn("Migration lock was not released because it no longer holds our token "
+                                + "(instanceId:{}) - another instance may already own it", instanceId);
+                    }
+                    lockToken = null;
+                    promise.complete();
+                }
+            });
+        });
+        
+        return promise.future();
+    }
+
+    /**
+     * Turns the lock into a permanent failure marker (CAS-checked, only if it still holds our token),
+     * instead of releasing it, when a task genuinely failed. Unlike {@link #releaseLock()}, this never
+     * lets the key disappear on its own: {@code SET} without a TTL both changes the value and clears
+     * any existing expiry, so waiting instances (see {@link #pollLockKey}) can tell "still running"
+     * apart from "failed and stuck", rather than the lock silently going away (via a future TTL expiry
+     * or manual cleanup) and being mistaken for a successfully completed migration. A human must
+     * delete the lock key manually before the migration can be retried.
+     *
+     * <p><b>Must not stop the refresh timer before the CAS actually lands</b>: the timer is what keeps
+     * extending the lock's TTL, so stopping it first and then hitting a transient Redis failure while
+     * attempting the CAS would leave the lock to expire naturally within {@link #MIGRATION_LOCK_TIMEOUT_MS}
+     * - at which point any other instance polling it (see {@link #pollLockKey}) would see it simply gone
+     * and mistake the failed migration for a completed one. Instead, this retries the CAS a bounded
+     * number of times (with the timer still running throughout) before giving up.</p>
+     */
+    private Future<Void> markLockAsFailed() {
+        Promise<Void> promise = Promise.promise();
+        attemptMarkLockAsFailed(promise, 1);
+        return promise.future();
+    }
+
+    private void attemptMarkLockAsFailed(final Promise<Void> promise, final int attempt) {
+        redisProvider.redis().onComplete(ar -> {
+            if (ar.failed()) {
+                log.warn("Redis connection failed while marking migration lock as failed (instanceId:{}, attempt:{}/{})",
+                        instanceId, attempt, MARK_FAILED_MAX_ATTEMPTS, ar.cause());
+                retryOrGiveUpMarkingLockAsFailed(promise, attempt, ar.cause());
+                return;
+            }
+
+            RedisAPI redisAPI = ar.result();
+            String token = lockToken;
+            if (token == null) {
+                log.debug("No lock token to mark as failed (instanceId:{})", instanceId);
+                stopRefreshTimer();
+                promise.complete();
+                return;
+            }
+            String failedMarker = token + LOCK_FAILED_MARKER_SUFFIX;
+            redisAPI.eval(Arrays.asList(MARK_LOCK_FAILED_SCRIPT, "1", MIGRATION_LOCK_KEY, token, failedMarker),
+                    evalResult -> {
+                if (evalResult.failed()) {
+                    log.warn("Failed to mark migration lock as failed (instanceId:{}, attempt:{}/{})",
+                            instanceId, attempt, MARK_FAILED_MAX_ATTEMPTS, evalResult.cause());
+                    retryOrGiveUpMarkingLockAsFailed(promise, attempt, evalResult.cause());
+                } else {
+                    // The CAS check itself completed (whether or not it still held our token) - the
+                    // lock is now in a well-defined terminal state (either marked as failed, or already
+                    // taken over by another instance we no longer need to protect), so it's safe to
+                    // stop refreshing it now.
+                    stopRefreshTimer();
+                    boolean marked = evalResult.result() != null && "OK".equalsIgnoreCase(evalResult.result().toString());
+                    if (marked) {
+                        log.error("Migration task failed (instanceId:{}); lock left in place as a permanent failure "
+                                + "marker - manual operator intervention (delete '{}') is required before retrying",
+                                instanceId, MIGRATION_LOCK_KEY);
+                    } else {
+                        log.warn("Migration lock was not marked as failed because it no longer holds our token "
+                                + "(instanceId:{}) - another instance may already own it", instanceId);
+                    }
+                    lockToken = null;
+                    promise.complete();
+                }
+            });
+        });
+    }
+
+    private void retryOrGiveUpMarkingLockAsFailed(final Promise<Void> promise, final int attempt, final Throwable cause) {
+        if (attempt >= MARK_FAILED_MAX_ATTEMPTS) {
+            // Retries exhausted: a sustained Redis outage lasting through every attempt is fundamentally
+            // indistinguishable from "Redis is down for good" - deliberately keep the refresh timer
+            // running rather than stopping it here, so that if Redis recovers before this process exits,
+            // the lock's TTL keeps getting extended (still under our own token, since we never lost
+            // ownership) and it does not silently disappear out from under a genuinely failed migration.
+            log.error("Giving up marking migration lock as failed after {} attempts (instanceId:{}); leaving the "
+                    + "refresh timer running so the lock does not silently expire while Redis recovers - manual "
+                    + "operator intervention is still required to unblock other instances", MARK_FAILED_MAX_ATTEMPTS,
+                    instanceId, cause);
+            promise.fail(cause);
+            return;
+        }
+        vertx.setTimer(MARK_FAILED_RETRY_DELAY_MS, tid -> attemptMarkLockAsFailed(promise, attempt + 1));
+    }
+
+    /**
+     * Runs all registered tasks sequentially.
+     */
+    private Future<Void> runTasksSequentially() {
+        Future<Void> chain = Future.succeededFuture();
+        
+        for (Task task : tasks) {
+            chain = chain.compose(v -> {
+                log.info("Starting migration task: {} (instanceId:{})", task.getTaskKey(), instanceId);
+                return task.run()
+                    .map(success -> {
+                        if (!success) {
+                            throw new RuntimeException("Task failed: " + task.getTaskKey());
+                        }
+                        log.info("Migration task completed: {} (instanceId:{})", task.getTaskKey(), instanceId);
+                        return null;
+                    });
+            });
+        }
+        
+        return chain;
+    }
+
+    /**
+     * Waits for another instance's migration to complete by polling the lock key.
+     */
+    private Future<Void> waitForOtherMigrationCompletion() {
+        Promise<Void> promise = Promise.promise();
+        pollLockKey(promise);
+        return promise.future();
+    }
+
+    /**
+     * Polls the lock key to check if migration is still in progress. Uses GET rather than EXISTS so
+     * a permanent failure marker (see {@link #markLockAsFailed()}) can be recognized and surfaced as
+     * a failure here too, instead of being polled forever or - worse - mistaken for a still-running
+     * migration that will eventually "complete" once observed as absent.
+     */
+    private void pollLockKey(Promise<Void> promise) {
+        redisProvider.redis().onComplete(ar -> {
+            if (ar.failed()) {
+                log.error("Redis connection failed during lock polling (instanceId:{})", instanceId, ar.cause());
+                promise.fail(ar.cause());
+                return;
+            }
+            
+            RedisAPI redisAPI = ar.result();
+            redisAPI.get(MIGRATION_LOCK_KEY, getResult -> {
+                if (getResult.failed()) {
+                    log.error("Failed to check lock key (instanceId:{})", instanceId, getResult.cause());
+                    promise.fail(getResult.cause());
+                    return;
+                }
+
+                String value = getResult.result() == null ? null : getResult.result().toString();
+                if (value == null) {
+                    // Lock gone. This alone is NOT proof of a successful migration: if the lock-holding
+                    // instance crashed hard (e.g. OOM-killed) mid-task rather than failing a task
+                    // cleanly, no :FAILED marker is ever written and the lock simply expires via its
+                    // TTL - indistinguishable, by lock state alone, from a normal release after
+                    // success. Verify every task's own completion flag before trusting this.
+                    verifyAllTasksActuallyCompleted(promise);
+                } else if (value.endsWith(LOCK_FAILED_MARKER_SUFFIX)) {
+                    log.error("Migration failed on the instance that held the lock (instanceId:{}); lock marker "
+                            + "indicates failure, not proceeding as if migration succeeded", instanceId);
+                    promise.fail("Migration failed on another instance (lock marker: " + value + ")");
+                } else {
+                    // Lock still held, check again later
+                    log.debug("Lock key still exists, checking again in {}ms (instanceId:{})", 
+                        MIGRATION_LOCK_REFRESH_MS, instanceId);
+                    vertx.setTimer(MIGRATION_LOCK_REFRESH_MS, tid -> pollLockKey(promise));
+                }
+            });
+        });
+    }
+
+    /**
+     * Called once a waiting instance observes the migration lock has disappeared. Confirms every
+     * registered task's own completion flag (see {@link Task#isDone()}) is actually set before
+     * declaring success - closing the gap where a lock-holding instance crashed hard mid-task (no
+     * {@code :FAILED} marker written, lock merely expired) and a waiting instance would otherwise
+     * mistake that for a completed migration and proceed against partially-migrated data.
+     */
+    private void verifyAllTasksActuallyCompleted(Promise<Void> promise) {
+        verifyTaskCompleted(0, promise);
+    }
+
+    private void verifyTaskCompleted(int index, Promise<Void> promise) {
+        if (index >= tasks.size()) {
+            log.debug("Lock key no longer exists and every task's completion flag is set, migration complete "
+                    + "(instanceId:{})", instanceId);
+            promise.complete();
+            return;
+        }
+        Task task = tasks.get(index);
+        task.isDone().onComplete(ar -> {
+            if (ar.failed()) {
+                log.error("Failed to verify task '{}' completion after the migration lock disappeared "
+                        + "(instanceId:{})", task.getTaskKey(), instanceId, ar.cause());
+                promise.fail(ar.cause());
+                return;
+            }
+            if (!Boolean.TRUE.equals(ar.result())) {
+                log.error("Migration lock disappeared but task '{}' never reported completion (instanceId:{}) - "
+                        + "the lock-holding instance likely crashed mid-migration rather than finishing or "
+                        + "cleanly failing; not proceeding as if migration succeeded", task.getTaskKey(), instanceId);
+                promise.fail("Migration lock disappeared without task '" + task.getTaskKey()
+                        + "' ever completing - the lock owner likely crashed mid-migration");
+                return;
+            }
+            verifyTaskCompleted(index + 1, promise);
+        });
+    }
+
+    /**
+     * Starts a periodic timer to refresh the migration lock, using a Lua compare-and-swap so the TTL
+     * is only extended while the lock still holds this instance's token (see {@link #lockToken}). If
+     * the lock was lost (e.g. TTL expired during a stall before a refresh tick could run, and another
+     * instance has since acquired it), {@link #lockOwnershipLost} is set and the timer stops itself -
+     * further ticks would otherwise refresh a different instance's lock.
+     */
+    private void startRefreshTimer() {
+        // Ownership must be considered lost once enough consecutive ticks have failed to even reach
+        // the CAS check that the lock's TTL could plausibly have already expired on Redis's side.
+        final int maxConsecutiveFailures = Math.max(1, MIGRATION_LOCK_TIMEOUT_MS / MIGRATION_LOCK_REFRESH_MS);
+        refreshTimerId = vertx.setPeriodic(MIGRATION_LOCK_REFRESH_MS, tid -> {
+            redisProvider.redis().onComplete(ar -> {
+                if (ar.failed()) {
+                    log.error("Redis connection failed during lock refresh (instanceId:{})", instanceId, ar.cause());
+                    onRefreshCheckFailedToRun(maxConsecutiveFailures);
+                    return;
+                }
+                
+                RedisAPI redisAPI = ar.result();
+                String token = lockToken;
+                if (token == null) {
+                    return;
+                }
+                redisAPI.eval(
+                    Arrays.asList(REFRESH_LOCK_SCRIPT, "1", MIGRATION_LOCK_KEY, token,
+                            String.valueOf(MIGRATION_LOCK_TIMEOUT_MS)),
+                    evalResult -> {
+                        if (evalResult.failed()) {
+                            log.warn("Failed to refresh migration lock (instanceId:{})", instanceId, evalResult.cause());
+                            onRefreshCheckFailedToRun(maxConsecutiveFailures);
+                            return;
+                        }
+                        consecutiveRefreshFailures = 0;
+                        boolean refreshed = evalResult.result() != null && evalResult.result().toInteger() != 0;
+                        if (refreshed) {
+                            log.debug("Migration lock TTL refreshed (instanceId:{})", instanceId);
+                        } else {
+                            log.error("Migration lock ownership lost (instanceId:{}); another instance may now "
+                                    + "hold it. Stopping refresh timer.", instanceId);
+                            lockOwnershipLost = true;
+                            stopRefreshTimer();
+                        }
+                    }
+                );
+            });
+        });
+        log.debug("Migration lock refresh timer started (instanceId:{})", instanceId);
+    }
+
+    /**
+     * Called whenever a refresh tick fails before it could even complete the CAS check (Redis
+     * connection failure, or the eval call itself failing). Tracks consecutive such failures and,
+     * once enough of them have accumulated to span the lock's TTL window, treats this the same as a
+     * CAS-detected ownership loss: by then the lock may well have already expired on Redis's side and
+     * been re-acquired by another instance, so continuing to run under the assumption of exclusive
+     * ownership would be unsafe.
+     */
+    private void onRefreshCheckFailedToRun(int maxConsecutiveFailures) {
+        int failures = ++consecutiveRefreshFailures;
+        if (failures >= maxConsecutiveFailures) {
+            log.error("Migration lock refresh failed {} consecutive times (instanceId:{}); assuming the lock's "
+                    + "TTL has expired and ownership may be lost. Stopping refresh timer.", failures, instanceId);
+            lockOwnershipLost = true;
+            stopRefreshTimer();
+        }
+    }
+
+    /**
+     * Stops the periodic lock refresh timer.
+     */
+    private void stopRefreshTimer() {
+        if (refreshTimerId != null) {
+            vertx.cancelTimer(refreshTimerId);
+            refreshTimerId = null;
+            log.debug("Migration lock refresh timer stopped (instanceId:{})", instanceId);
+        }
+    }
+}

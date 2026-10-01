@@ -56,10 +56,12 @@ public interface Storage {
      *               Implementations are encouraged to apply this filter natively (e.g. as part of a key scan
      *               pattern) instead of post-filtering the full result set
      * @param cursor an opaque cursor as previously returned in {@link PathListResource#nextCursor}, or
-     *               {@code 0} to start a new listing from the beginning
+     *               {@code 0} to start a new listing from the beginning. Declared as {@code long} since
+     *               a Redis Cluster {@code SCAN} cursor is an unsigned 32-bit value that can exceed
+     *               {@link Integer#MAX_VALUE}.
      * @param handler the callback invoked with the list result
      */
-    void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler);
+    void list(String path, int limit, String filter, long cursor, Handler<PathListResource> handler);
 
     /**
      * Stores or updates a resource without explicit locking.

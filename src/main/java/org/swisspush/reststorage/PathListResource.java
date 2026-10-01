@@ -8,5 +8,5 @@ public class PathListResource extends Resource {
      * Opaque cursor to resume a paginated {@code list} call. A value of {@code 0}
      * indicates that there are no more results to fetch.
      */
-    public int nextCursor;
+    public long nextCursor;
 }

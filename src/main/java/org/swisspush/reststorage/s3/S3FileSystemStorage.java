@@ -340,7 +340,7 @@ public class S3FileSystemStorage implements Storage {
     }
 
     @Override
-    public void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler) {
+    public void list(String path, int limit, String filter, long cursor, Handler<PathListResource> handler) {
         vertx.executeBlocking(promise -> {
             PathListResource result = new PathListResource();
             result.paths = new java.util.ArrayList<>();
@@ -355,7 +355,7 @@ public class S3FileSystemStorage implements Storage {
                 promise.complete(result);
                 return;
             }
-            final int offset = Math.max(cursor, 0);
+            final long offset = Math.max(cursor, 0L);
             try (Stream<Path> pathStream = Files.walk(fullDirPath)) {
                 List<String> matched = pathStream
                         .filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS))
@@ -363,9 +363,11 @@ public class S3FileSystemStorage implements Storage {
                         .filter(p -> filter == null || filter.isEmpty() || p.contains(filter))
                         .sorted()
                         .collect(Collectors.toList());
-                int toIndex = Math.min(offset + limit, matched.size());
+                // offset/limit are computed as long to avoid overflow for large/adversarial cursor values;
+                // the result is safely narrowed to int only once bounded by matched.size() (an int-indexed List).
+                int toIndex = (int) Math.min(offset + limit, matched.size());
                 if (offset < matched.size()) {
-                    result.paths.addAll(matched.subList(offset, toIndex));
+                    result.paths.addAll(matched.subList((int) offset, toIndex));
                 }
                 result.nextCursor = toIndex < matched.size() ? toIndex : 0;
                 promise.complete(result);

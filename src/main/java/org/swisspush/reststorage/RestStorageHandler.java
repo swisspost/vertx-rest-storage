@@ -663,10 +663,10 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                 }
                 final int limit = parsedLimit;
                 String cursorParam = getString(request.params(), CURSOR_PARAMETER);
-                int cursor = 0;
+                long cursor = 0;
                 if (cursorParam != null && !cursorParam.isEmpty()) {
                     try {
-                        cursor = Integer.parseInt(cursorParam);
+                        cursor = Long.parseLong(cursorParam);
                     } catch (NumberFormatException ex) {
                         respondWithBadRequest(request, "Bad Request: cursor must be a non-negative integer");
                         return;

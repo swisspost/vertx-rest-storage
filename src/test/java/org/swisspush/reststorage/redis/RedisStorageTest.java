@@ -205,7 +205,36 @@ public class RedisStorageTest {
         storage.list("/some/path", 1000, null, 42, event -> {
             testContext.assertFalse(event.error);
             testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths);
-            testContext.assertEquals(99, event.nextCursor);
+            testContext.assertEquals(99L, event.nextCursor);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListHandlesScanCursorLargerThanIntegerMaxValueWithoutGoingNegative(TestContext testContext) {
+        // Regression test: Redis's SCAN cursor is an unsigned value that can exceed Integer.MAX_VALUE
+        // (2147483647) for large/dense keyspaces. Parsing it as a signed int would wrap it into a
+        // negative value, which RestStorageHandler would then reject as an invalid cursor on the next
+        // page request, permanently stalling pagination. nextCursor must stay long and positive.
+        Async async = testContext.async();
+        String largeUnsignedCursor = "3000000000"; // exceeds Integer.MAX_VALUE but fits comfortably in a long
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse(largeUnsignedCursor, "rest-storage:resources:some:path:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths);
+            testContext.assertEquals(3000000000L, event.nextCursor);
+            testContext.assertTrue(event.nextCursor >= 0, "cursor must never be negative, or callers rejecting negative cursors would reject it");
             async.complete();
         });
     }
@@ -228,7 +257,7 @@ public class RedisStorageTest {
         storage.list("/some/path", 1000, null, 0, event -> {
             testContext.assertFalse(event.error);
             testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths);
-            testContext.assertEquals(0, event.nextCursor);
+            testContext.assertEquals(0L, event.nextCursor);
             async.complete();
         });
     }
@@ -282,7 +311,7 @@ public class RedisStorageTest {
             testContext.assertFalse(event.error);
             testContext.assertEquals(Arrays.asList("/some/path/a", "/some/path/b", "/some/path/c"), event.paths,
                     "all matches of this SCAN round must be reported, even though there are more than the requested limit");
-            testContext.assertEquals(0, event.nextCursor);
+            testContext.assertEquals(0L, event.nextCursor);
             async.complete();
         });
     }

@@ -672,7 +672,7 @@ public class RedisStorage implements Storage {
     }
 
     @Override
-    public void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler) {
+    public void list(String path, int limit, String filter, long cursor, Handler<PathListResource> handler) {
         final String key = encodePath(path);
         final String matchPattern = buildListMatchPattern(key, filter);
         redisProvider.redis().onComplete(redisEv -> {
@@ -693,7 +693,7 @@ public class RedisStorage implements Storage {
     }
 
     /**
-     * Builds the Redis {@code SCAN MATCH} glob pattern used by {@link #list(String, int, String, int, Handler)}.
+     * Builds the Redis {@code SCAN MATCH} glob pattern used by {@link #list(String, int, String, long, Handler)}.
      * <p>
      * The optional filter is encoded the same way resource paths are encoded as Redis keys (colons/semicolons
      * escaped, slashes turned into colons) and embedded as a literal glob fragment surrounded by wildcards, so
@@ -726,7 +726,7 @@ public class RedisStorage implements Storage {
      */
     private static class ScanPage {
         List<String> keys = Collections.emptyList();
-        int nextCursor = 0;
+        long nextCursor = 0;
         boolean error;
         String errorMessage;
     }
@@ -735,7 +735,7 @@ public class RedisStorage implements Storage {
      * Performs exactly one Redis {@code SCAN} round starting at the given cursor, letting the caller
      * paginate across multiple {@code list} invocations instead of eagerly collecting the whole key space.
      */
-    private void scanResourcePage(RedisAPI redisAPI, int cursor, String matchPattern, int limit, Handler<ScanPage> handler) {
+    private void scanResourcePage(RedisAPI redisAPI, long cursor, String matchPattern, int limit, Handler<ScanPage> handler) {
         // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
         redisAPI.scan(Arrays.asList(String.valueOf(cursor), "MATCH", matchPattern, "COUNT", String.valueOf(limit)), scanEv -> {
             if (scanEv.failed()) {
@@ -750,7 +750,10 @@ public class RedisStorage implements Storage {
             Response response = scanEv.result();
             ScanPage page = new ScanPage();
             try {
-                page.nextCursor = Integer.parseUnsignedInt(response.get(0).toString());
+                // SCAN's cursor is an unsigned 32-bit value in Redis and parsed as an unsigned long here
+                // (rather than Integer.parseUnsignedInt) so it never wraps into a negative Java value,
+                // which would otherwise be rejected as invalid by callers that reject negative cursors.
+                page.nextCursor = Long.parseUnsignedLong(response.get(0).toString());
             } catch (NumberFormatException ex) {
                 page.error = true;
                 page.errorMessage = "redisAPI.scan() returned a non-numeric cursor: " + response.get(0);
@@ -779,7 +782,7 @@ public class RedisStorage implements Storage {
      * Expiry is checked with a single batched {@code ZMSCORE} call instead of one {@code ZSCORE} call
      * per key, avoiding one Redis round trip per matched key.
      */
-    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, int nextCursor, Handler<PathListResource> handler) {
+    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, long nextCursor, Handler<PathListResource> handler) {
         if (keys.isEmpty()) {
             handleEmptyPathList(redisAPI, key, nextCursor, handler);
             return;
@@ -812,7 +815,7 @@ public class RedisStorage implements Storage {
         });
     }
 
-    private void handleEmptyPathList(RedisAPI redisAPI, String key, int nextCursor, Handler<PathListResource> handler) {
+    private void handleEmptyPathList(RedisAPI redisAPI, String key, long nextCursor, Handler<PathListResource> handler) {
         redisAPI.exists(Arrays.asList(redisResourcesPrefix + key, redisCollectionsPrefix + key), existsEv -> {
             PathListResource result = new PathListResource();
             result.paths = Collections.emptyList();

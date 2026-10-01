@@ -229,13 +229,13 @@ public class RestStorageHandlerTest {
             resource.paths = List.of("/data/a+b");
             handler.handle(resource);
             return null;
-        }).when(storage).list(eq("/data"), Matchers.anyInt(), eq("+"), Matchers.anyInt(), Matchers.any());
+        }).when(storage).list(eq("/data"), Matchers.anyInt(), eq("+"), Matchers.anyLong(), Matchers.any());
 
         Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
         storageExpand.setAccessible(true);
         storageExpand.invoke(restStorageHandler, routingContext);
 
-        verify(storage, times(1)).list(eq("/data"), Matchers.anyInt(), eq("+"), Matchers.anyInt(), Matchers.any());
+        verify(storage, times(1)).list(eq("/data"), Matchers.anyInt(), eq("+"), Matchers.anyLong(), Matchers.any());
 
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
         verify(filterResponse).end(body.capture());
@@ -342,13 +342,13 @@ public class RestStorageHandlerTest {
             resource.paths = List.of("/data/a");
             handler.handle(resource);
             return null;
-        }).when(storage).list(eq("/data"), eq(50), Matchers.any(), Matchers.anyInt(), Matchers.any());
+        }).when(storage).list(eq("/data"), eq(50), Matchers.any(), Matchers.anyLong(), Matchers.any());
 
         Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
         storageExpand.setAccessible(true);
         storageExpand.invoke(restStorageHandler, routingContext);
 
-        verify(storage, times(1)).list(eq("/data"), eq(50), Matchers.any(), Matchers.anyInt(), Matchers.any());
+        verify(storage, times(1)).list(eq("/data"), eq(50), Matchers.any(), Matchers.anyLong(), Matchers.any());
     }
 
     @Test
@@ -375,13 +375,13 @@ public class RestStorageHandlerTest {
             resource.paths = List.of("/data/a");
             handler.handle(resource);
             return null;
-        }).when(storage).list(eq("/data"), eq(500), Matchers.any(), Matchers.anyInt(), Matchers.any());
+        }).when(storage).list(eq("/data"), eq(500), Matchers.any(), Matchers.anyLong(), Matchers.any());
 
         Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
         storageExpand.setAccessible(true);
         storageExpand.invoke(restStorageHandler, routingContext);
 
-        verify(storage, times(1)).list(eq("/data"), eq(500), Matchers.any(), Matchers.anyInt(), Matchers.any());
+        verify(storage, times(1)).list(eq("/data"), eq(500), Matchers.any(), Matchers.anyLong(), Matchers.any());
     }
 
     @Test
@@ -459,13 +459,13 @@ public class RestStorageHandlerTest {
             resource.paths = List.of("/data/a");
             handler.handle(resource);
             return null;
-        }).when(storage).list(eq("/data"), eq(500), Matchers.any(), eq(17), Matchers.any());
+        }).when(storage).list(eq("/data"), eq(500), Matchers.any(), eq(17L), Matchers.any());
 
         Method storageExpand = RestStorageHandler.class.getDeclaredMethod("storageExpand", RoutingContext.class);
         storageExpand.setAccessible(true);
         storageExpand.invoke(restStorageHandler, routingContext);
 
-        verify(storage, times(1)).list(eq("/data"), eq(500), Matchers.any(), eq(17), Matchers.any());
+        verify(storage, times(1)).list(eq("/data"), eq(500), Matchers.any(), eq(17L), Matchers.any());
     }
 
     @Test

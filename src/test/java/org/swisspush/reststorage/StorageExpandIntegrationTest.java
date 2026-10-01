@@ -311,7 +311,7 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
 
             List<String> paths = response.jsonPath().getList("paths", String.class);
             collectedPaths.addAll(paths);
-            cursor = String.valueOf(response.jsonPath().getInt("nextCursor"));
+            cursor = String.valueOf(response.jsonPath().getLong("nextCursor"));
             loops++;
             context.assertTrue(loops <= 10, "too many pagination loops, possible infinite loop");
         } while (!"0".equals(cursor));

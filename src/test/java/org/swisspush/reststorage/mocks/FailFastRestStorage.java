@@ -38,7 +38,7 @@ public class FailFastRestStorage implements Storage {
     }
 
     @Override
-    public void list(String path, int limit, String filter, int cursor, Handler<PathListResource> handler) {
+    public void list(String path, int limit, String filter, long cursor, Handler<PathListResource> handler) {
         throw new UnsupportedOperationException(msg);
     }
 

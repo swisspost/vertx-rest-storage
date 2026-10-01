@@ -49,8 +49,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.swisspush.reststorage.redis.RedisUtils.toPayload;
 
@@ -688,7 +686,7 @@ public class RedisStorage implements Storage {
                 if (page.error) {
                     pathListError(handler, page.errorMessage);
                 } else {
-                    filterExpiredPaths(redisEv.result(), key, page.keys, limit, page.nextCursor, handler);
+                    filterExpiredPaths(redisEv.result(), key, page.keys, page.nextCursor, handler);
                 }
             });
         });
@@ -768,39 +766,50 @@ public class RedisStorage implements Storage {
         });
     }
 
-    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, int limit, int nextCursor, Handler<PathListResource> handler) {
+    /**
+     * Filters out expired keys from a single {@code SCAN} page and reports the surviving paths.
+     * <p>
+     * Note: {@code limit}/{@code COUNT} is only a hint to Redis' {@code SCAN} - a single round can
+     * legitimately return more matches than requested. All matches of this page are therefore always
+     * reported (never truncated): truncating here would silently drop paths, since the underlying
+     * {@code SCAN} cursor has already moved past them and they could never be returned on a later page.
+     * As a consequence a single page occasionally contains slightly more than {@code limit} paths; the
+     * {@code nextCursor} returned alongside still reliably indicates whether more data remains.
+     * <p>
+     * Expiry is checked with a single batched {@code ZMSCORE} call instead of one {@code ZSCORE} call
+     * per key, avoiding one Redis round trip per matched key.
+     */
+    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, int nextCursor, Handler<PathListResource> handler) {
         if (keys.isEmpty()) {
             handleEmptyPathList(redisAPI, key, nextCursor, handler);
             return;
         }
 
-        List<String> paths = Collections.synchronizedList(new ArrayList<>());
-        AtomicInteger remaining = new AtomicInteger(keys.size());
-        AtomicBoolean failed = new AtomicBoolean(false);
+        List<String> zmscoreArgs = new ArrayList<>(keys.size() + 1);
+        zmscoreArgs.add(expirableSet);
+        zmscoreArgs.addAll(keys);
         long now = System.currentTimeMillis();
-        for (String resourceKey : keys) {
-            redisAPI.zscore(expirableSet, resourceKey, scoreEv -> {
-                if (scoreEv.failed()) {
-                    if (failed.compareAndSet(false, true)) {
-                        log.error("LIST zscore request in storage {} failed with message", storageIdentifier,
-                                exceptionFactory.newException("redisAPI.zscore() failed", scoreEv.cause()));
-                        pathListError(handler, "redisAPI.zscore() failed: " + scoreEv.cause().getMessage());
-                    }
-                    return;
-                }
-                Response score = scoreEv.result();
+        redisAPI.zmscore(zmscoreArgs, scoreEv -> {
+            if (scoreEv.failed()) {
+                log.error("LIST zmscore request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException("redisAPI.zmscore() failed", scoreEv.cause()));
+                pathListError(handler, "redisAPI.zmscore() failed: " + scoreEv.cause().getMessage());
+                return;
+            }
+            Response scores = scoreEv.result();
+            List<String> paths = new ArrayList<>(keys.size());
+            for (int i = 0; i < keys.size(); i++) {
+                Response score = scores.get(i);
                 if (score == null || Double.parseDouble(score.toString()) >= now) {
-                    paths.add(decodeResourceKey(resourceKey));
+                    paths.add(decodeResourceKey(keys.get(i)));
                 }
-                if (remaining.decrementAndGet() == 0 && !failed.get()) {
-                    PathListResource result = new PathListResource();
-                    Collections.sort(paths);
-                    result.paths = paths.size() > limit ? new ArrayList<>(paths.subList(0, limit)) : paths;
-                    result.nextCursor = nextCursor;
-                    handler.handle(result);
-                }
-            });
-        }
+            }
+            Collections.sort(paths);
+            PathListResource result = new PathListResource();
+            result.paths = paths;
+            result.nextCursor = nextCursor;
+            handler.handle(result);
+        });
     }
 
     private void handleEmptyPathList(RedisAPI redisAPI, String key, int nextCursor, Handler<PathListResource> handler) {

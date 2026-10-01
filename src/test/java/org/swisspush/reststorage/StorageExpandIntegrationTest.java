@@ -295,6 +295,9 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
         String cursor = "0";
         int loops = 0;
         do {
+            // Note: Redis SCAN's COUNT is only a hint, not a hard page-size cap, so a given page may
+            // occasionally contain more than "limit" paths - what matters is that every path is
+            // eventually returned exactly once and that nextCursor reliably signals completion.
             Response response = given()
                     .queryParam("storageExpand", "true")
                     .queryParam("listOnly", "true")
@@ -304,7 +307,6 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
                     .post("/server/resources/data/pagination")
                     .then()
                     .assertThat().statusCode(200).contentType(ContentType.JSON)
-                    .body("paths.size()", lessThanOrEqualTo(2))
                     .extract().response();
 
             List<String> paths = response.jsonPath().getList("paths", String.class);

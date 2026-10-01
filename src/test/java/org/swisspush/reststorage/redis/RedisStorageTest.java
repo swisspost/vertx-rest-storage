@@ -145,10 +145,7 @@ public class RedisStorageTest {
             });
             return null;
         });
-        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
-            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
-            return null;
-        });
+        stubZmscoreAllActive();
 
         storage.list("/some/path", 1000, null, 0, event -> {
             testContext.assertFalse(event.error);
@@ -176,10 +173,7 @@ public class RedisStorageTest {
             });
             return null;
         });
-        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
-            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
-            return null;
-        });
+        stubZmscoreAllActive();
 
         storage.list("/data/myService/vehicles", 1000, null, 0, event -> {
             testContext.assertFalse(event.error);
@@ -206,10 +200,7 @@ public class RedisStorageTest {
             });
             return null;
         });
-        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
-            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
-            return null;
-        });
+        stubZmscoreAllActive();
 
         storage.list("/some/path", 1000, null, 42, event -> {
             testContext.assertFalse(event.error);
@@ -232,10 +223,7 @@ public class RedisStorageTest {
             });
             return null;
         });
-        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
-            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
-            return null;
-        });
+        stubZmscoreAllActive();
 
         storage.list("/some/path", 1000, null, 0, event -> {
             testContext.assertFalse(event.error);
@@ -258,14 +246,84 @@ public class RedisStorageTest {
             });
             return null;
         });
-        when(redisAPI.zscore(eq("rest-storage:expirable"), anyString(), any(Handler.class))).thenAnswer(invocation -> {
-            ((Handler<AsyncResult<Response>>) invocation.getArguments()[2]).handle(new SuccessAsyncResult());
-            return null;
-        });
+        stubZmscoreAllActive();
 
         storage.list("/some/path", 1000, "more", 0, event -> {
             testContext.assertFalse(event.error);
             testContext.assertEquals(Arrays.asList("/some/path/more-1/a"), event.paths);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListDoesNotDropMatchesExceedingLimitWithinASingleScanRound(TestContext testContext) {
+        // Regression test: SCAN's COUNT is only a hint to Redis - a single round can legitimately
+        // return more matches than the requested limit. Since the underlying SCAN cursor has already
+        // moved past those keys, truncating them here would silently and permanently drop paths -
+        // including the case below where the scan reports completion (cursor "0") in the very same
+        // round that exceeded the limit.
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "2")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:some:path:a",
+                            "rest-storage:resources:some:path:b",
+                            "rest-storage:resources:some:path:c");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 2, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a", "/some/path/b", "/some/path/c"), event.paths,
+                    "all matches of this SCAN round must be reported, even though there are more than the requested limit");
+            testContext.assertEquals(0, event.nextCursor);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListChecksExpiryWithASingleBatchedZmscoreCallInsteadOfOnePerKey(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:some:path:a",
+                            "rest-storage:resources:some:path:b");
+                }
+            });
+            return null;
+        });
+        long past = System.currentTimeMillis() - 10_000;
+        when(redisAPI.zmscore(eq(Arrays.asList("rest-storage:expirable",
+                "rest-storage:resources:some:path:a", "rest-storage:resources:some:path:b")), any(Handler.class)))
+                .thenAnswer(invocation -> {
+                    MultiType scores = MultiType.create(2, false);
+                    scores.add(null);
+                    scores.add(BulkType.create(BufferImpl.buffer(String.valueOf(past)), false));
+                    ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                        @Override
+                        public Response result() {
+                            return scores;
+                        }
+                    });
+                    return null;
+                });
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths,
+                    "path b expired in the past and must be filtered out, path a has no expiry and must be kept");
+            verify(redisAPI, never()).zscore(anyString(), anyString(), any(Handler.class));
+            verify(redisAPI, times(1)).zmscore(anyList(), any(Handler.class));
             async.complete();
         });
     }
@@ -792,5 +850,26 @@ public class RedisStorageTest {
         response.add(SimpleStringType.create(cursor));
         response.add(keyResponse);
         return response;
+    }
+
+    /**
+     * Stubs {@code redisAPI.zmscore(...)} to report every requested key as not expired (null score),
+     * matching the default fixture behaviour previously provided by per-key {@code zscore} stubs.
+     */
+    private void stubZmscoreAllActive() {
+        when(redisAPI.zmscore(anyList(), any(Handler.class))).thenAnswer(invocation -> {
+            List<String> args = (List<String>) invocation.getArguments()[0];
+            MultiType scores = MultiType.create(args.size() - 1, false);
+            for (int i = 1; i < args.size(); i++) {
+                scores.add(null);
+            }
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scores;
+                }
+            });
+            return null;
+        });
     }
 }

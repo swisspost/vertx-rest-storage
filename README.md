@@ -164,9 +164,8 @@ returned. The filter is treated as a literal string and is limited to 256 charac
 **POST /yourStorageURL/collection?storageExpand=true&listOnly=true&filter=resource2**
 
 To limit the amount of returned paths, add the optional **limit** URL parameter. When omitted, up to 500
-paths are returned. Requesting a value greater than 500 results in a _400 Bad Request_ response. When combined
-with **filter**, the filter is applied first (natively, e.g. as part of the Redis key scan) and **limit**
-then caps the amount of already filtered paths returned:
+paths are requested per page. Requesting a value greater than 500 results in a _400 Bad Request_ response. When
+combined with **filter**, the filter is applied first (natively, e.g. as part of the Redis key scan):
 
 **POST /yourStorageURL/collection?storageExpand=true&listOnly=true&limit=50**
 
@@ -179,9 +178,12 @@ numeric cursor that must be sent back as the optional **cursor** URL parameter t
 The **cursor** value returned by one call is only valid for subsequent calls against the same collection and the
 same storage backend. A negative or non-numeric **cursor** results in a _400 Bad Request_ response.
 
-For Redis storage, **limit** controls the requested `SCAN` batch size but does not guarantee that every page
-contains that many paths. Redis may return fewer results even when more paths are available. Continue requesting
-pages with **nextCursor** until its value is `0`.
+For Redis storage, **limit** only controls the requested `SCAN` batch size (`COUNT`); it is a hint, not a hard
+cap. A page may therefore contain fewer or, occasionally, more than **limit** paths - Redis may return fewer
+results even when more paths are available, and conversely a single `SCAN` round can return more matches than
+requested. Pages are never truncated to avoid silently dropping paths. Continue requesting pages with
+**nextCursor** until its value is `0`.
+
 
 `Attention:` When using Redis storage, this operation is not Redis Cluster safe. The current implementation uses Redis `SCAN`, which is node-local in Redis Cluster.
 

@@ -138,6 +138,55 @@ The amount of sub resources that can be provided is defined in the configuration
 To override this for a single request, add the following request header with an appropriate value:
 > x-max-expand-resources: 1500
 
+#### List only
+
+To list all document resource paths below a collection without loading the document bodies, add the **listOnly=true** URL parameter together with **storageExpand=true**:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true**
+
+This returns a JSON response containing the matching document paths and a pagination cursor:
+
+```json
+{
+  "paths": [
+    "/yourStorageURL/collection/resource1",
+    "/yourStorageURL/collection/subCollection/resource2"
+  ],
+  "nextCursor": 0
+}
+```
+
+This can be used to discover deeply nested document resources before deciding which large resource bodies to load.
+
+To return only matching paths, add the optional **filter** URL parameter. Paths containing the filter value are
+returned. The filter is treated as a literal string and is limited to 256 characters:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&filter=resource2**
+
+To limit the amount of returned paths, add the optional **limit** URL parameter. When omitted, up to 500
+paths are requested per page. Requesting a value greater than 500 results in a _400 Bad Request_ response. When
+combined with **filter**, the filter is applied first (natively, e.g. as part of the Redis key scan):
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&limit=50**
+
+Each response is a single page of results. The **nextCursor** field is a non-negative integer indicating whether
+more results are available: a value of `0` means there are no more results, while any other value is an opaque
+numeric cursor that must be sent back as the optional **cursor** URL parameter to fetch the next page:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&limit=50&cursor=17**
+
+The **cursor** value returned by one call is only valid for subsequent calls against the same collection and the
+same storage backend. A negative or non-numeric **cursor** results in a _400 Bad Request_ response.
+
+For Redis storage, **limit** only controls the requested `SCAN` batch size (`COUNT`); it is a hint, not a hard
+cap. A page may therefore contain fewer or, occasionally, more than **limit** paths - Redis may return fewer
+results even when more paths are available, and conversely a single `SCAN` round can return more matches than
+requested. Pages are never truncated to avoid silently dropping paths. Continue requesting pages with
+**nextCursor** until its value is `0`.
+
+
+`Attention:` When using Redis storage, this operation is not Redis Cluster safe. The current implementation uses Redis `SCAN`, which is node-local in Redis Cluster.
+
 
 ### Reject PUT requests on low memory (redis only)
 The redis storage provides a feature to reject PUT requests when the memory gets low. The information about the used memory is provided by the

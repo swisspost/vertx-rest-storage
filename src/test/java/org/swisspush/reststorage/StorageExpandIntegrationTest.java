@@ -20,6 +20,9 @@ import org.junit.runner.RunWith;
 import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 import org.swisspush.reststorage.util.HttpRequestHeader;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
 
@@ -163,6 +166,160 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
                 .body("res1.foo", equalTo("bar1"))
                 .body("res2.foo", equalTo("bar2"))
                 .body("res3.foo", equalTo("bar3"));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyReturnsDocumentPathsWithoutBodies(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"stuff-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff");
+        with().body("{ \"big\": \"a-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a");
+        with().body("{ \"big\": \"b-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b");
+
+        given()
+                .when()
+                .post("/server/resources/data/myService/vehicles?storageExpand=true&ListOnly=true")
+                .then()
+                .assertThat().statusCode(200).contentType(ContentType.JSON)
+                .body("paths", containsInAnyOrder(
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
+                .body("paths", everyItem(not(containsString("body"))));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyFiltersDocumentPaths(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"stuff-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff");
+        with().body("{ \"big\": \"a-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a");
+        with().body("{ \"big\": \"b-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b");
+
+        given()
+                .queryParam("storageExpand", "true")
+                .queryParam("listOnly", "true")
+                .queryParam("filter", "/more/more-1/")
+                .when()
+                .post("/server/resources/data/myService/vehicles")
+                .then()
+                .assertThat().statusCode(200).contentType(ContentType.JSON)
+                .body("paths", containsInAnyOrder(
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
+                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff")));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyFiltersDocumentPathsWithEncodedFilter(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"stuff-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff");
+        with().body("{ \"big\": \"a-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a");
+        with().body("{ \"big\": \"b-body\" }").put("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b");
+
+        given()
+                .urlEncodingEnabled(false)
+                .when()
+                .post("/server/resources/data/myService/vehicles?storageExpand=true&listOnly=true&filter=%2Fmore%2Fmore-1%2F")
+                .then()
+                .assertThat().statusCode(200).contentType(ContentType.JSON)
+                .body("paths", containsInAnyOrder(
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
+                        "/server/resources/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b"))
+                .body("paths", not(hasItem("/server/resources/data/myService/vehicles/vehicle-1/components/component-1/stuff")));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyTreatsRegexCharactersLiterally(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        with().body("{ \"big\": \"body\" }").put("/server/resources/data/literal.name");
+        with().body("{ \"big\": \"body\" }").put("/server/resources/data/other");
+
+        given()
+                .queryParam("storageExpand", "true")
+                .queryParam("listOnly", "true")
+                .queryParam("filter", ".")
+                .when()
+                .post("/server/resources/data")
+                .then()
+                .assertThat().statusCode(HTTP_OK)
+                .body("paths", contains("/server/resources/data/literal.name"));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyRejectsOversizedFilter(TestContext context) {
+        Async async = context.async();
+
+        given()
+                .queryParam("storageExpand", "true")
+                .queryParam("listOnly", "true")
+                .queryParam("filter", "a".repeat(257))
+                .when()
+                .post("/server/resources/data")
+                .then()
+                .assertThat().statusCode(BAD_REQUEST)
+                .body(equalTo("Bad Request: Filter exceeds maximum length of 256 characters"));
+
+        async.complete();
+    }
+
+    @Test
+    public void testListOnlyPaginatesAllResultsUsingCursor(TestContext context) {
+        Async async = context.async();
+        delete("/server/resources");
+
+        List<String> expectedPaths = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            String path = "/server/resources/data/pagination/res" + i;
+            with().body("{ \"foo\": \"bar\" }").put(path);
+            expectedPaths.add(path);
+        }
+
+        List<String> collectedPaths = new ArrayList<>();
+        String cursor = "0";
+        int loops = 0;
+        do {
+            // Note: Redis SCAN's COUNT is only a hint, not a hard page-size cap, so a given page may
+            // occasionally contain more than "limit" paths - what matters is that every path is
+            // eventually returned exactly once and that nextCursor reliably signals completion.
+            Response response = given()
+                    .queryParam("storageExpand", "true")
+                    .queryParam("listOnly", "true")
+                    .queryParam("limit", "2")
+                    .queryParam("cursor", cursor)
+                    .when()
+                    .post("/server/resources/data/pagination")
+                    .then()
+                    .assertThat().statusCode(200).contentType(ContentType.JSON)
+                    .extract().response();
+
+            List<String> paths = response.jsonPath().getList("paths", String.class);
+            collectedPaths.addAll(paths);
+            cursor = String.valueOf(response.jsonPath().getLong("nextCursor"));
+            loops++;
+            context.assertTrue(loops <= 10, "too many pagination loops, possible infinite loop");
+        } while (!"0".equals(cursor));
+
+        context.assertTrue(loops > 1, "expected more than a single page given limit=2 and 5 resources");
+        collectedPaths.sort(null);
+        expectedPaths.sort(null);
+        context.assertEquals(expectedPaths, collectedPaths);
 
         async.complete();
     }

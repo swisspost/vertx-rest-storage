@@ -21,6 +21,7 @@ import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -105,6 +106,253 @@ public class RedisStorageTest {
 
             verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
             testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListWithRedisErrorCallsHandler(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisProvider.redis()).thenReturn(Future.failedFuture("Booooom"));
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            String msg = "redisProvider.redis() failed";
+            testContext.assertTrue(event.error);
+            testContext.assertEquals(msg, event.errorMessage);
+            testContext.assertEquals(Collections.emptyList(), event.paths);
+
+            ArgumentCaptor<Throwable> throwableArgument = ArgumentCaptor.forClass(Throwable.class);
+
+            verify(exceptionFactory, times(1)).newException(eq(msg), throwableArgument.capture());
+            testContext.assertTrue(throwableArgument.getValue().getMessage().contains("Booooom"));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListReturnsPathsWithoutLoadingResourceBodies(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:some:path:b:c",
+                            "rest-storage:resources:some:path:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertTrue(event.exists);
+            testContext.assertEquals(Arrays.asList("/some/path/a", "/some/path/b/c"), event.paths);
+            verify(redisAPI, never()).hmget(anyList(), any(Handler.class));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListReturnsNestedFileNamesAsDocumentPaths(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:data:myService:vehicles:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-1:components:component-1:stuff",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-1:components:component-1:more:more-1:a",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-1:components:component-1:more:more-1:b",
+                            "rest-storage:resources:data:myService:vehicles:vehicle-2:components:component-2:more:more-2:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/data/myService/vehicles", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList(
+                    "/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/a",
+                    "/data/myService/vehicles/vehicle-1/components/component-1/more/more-1/b",
+                    "/data/myService/vehicles/vehicle-1/components/component-1/stuff",
+                    "/data/myService/vehicles/vehicle-2/components/component-2/more/more-2/a"), event.paths);
+            verify(redisAPI, never()).hmget(anyList(), any(Handler.class));
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListPassesClientCursorToScanAndReturnsNextCursor(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("42", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("99", "rest-storage:resources:some:path:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 1000, null, 42, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths);
+            testContext.assertEquals(99L, event.nextCursor);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListHandlesScanCursorLargerThanIntegerMaxValueWithoutGoingNegative(TestContext testContext) {
+        // Regression test: Redis's SCAN cursor is an unsigned value that can exceed Integer.MAX_VALUE
+        // (2147483647) for large/dense keyspaces. Parsing it as a signed int would wrap it into a
+        // negative value, which RestStorageHandler would then reject as an invalid cursor on the next
+        // page request, permanently stalling pagination. nextCursor must stay long and positive.
+        Async async = testContext.async();
+        String largeUnsignedCursor = "3000000000"; // exceeds Integer.MAX_VALUE but fits comfortably in a long
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse(largeUnsignedCursor, "rest-storage:resources:some:path:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths);
+            testContext.assertEquals(3000000000L, event.nextCursor);
+            testContext.assertTrue(event.nextCursor >= 0, "cursor must never be negative, or callers rejecting negative cursors would reject it");
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListWithoutCursorScansFromZeroAndReportsCompletionCursor(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0", "rest-storage:resources:some:path:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths);
+            testContext.assertEquals(0L, event.nextCursor);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListFilterIsIncludedInScanMatchPattern(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*more*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0", "rest-storage:resources:some:path:more-1:a");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 1000, "more", 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/more-1/a"), event.paths);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListDoesNotDropMatchesExceedingLimitWithinASingleScanRound(TestContext testContext) {
+        // Regression test: SCAN's COUNT is only a hint to Redis - a single round can legitimately
+        // return more matches than the requested limit. Since the underlying SCAN cursor has already
+        // moved past those keys, truncating them here would silently and permanently drop paths -
+        // including the case below where the scan reports completion (cursor "0") in the very same
+        // round that exceeded the limit.
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "2")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:some:path:a",
+                            "rest-storage:resources:some:path:b",
+                            "rest-storage:resources:some:path:c");
+                }
+            });
+            return null;
+        });
+        stubZmscoreAllActive();
+
+        storage.list("/some/path", 2, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a", "/some/path/b", "/some/path/c"), event.paths,
+                    "all matches of this SCAN round must be reported, even though there are more than the requested limit");
+            testContext.assertEquals(0L, event.nextCursor);
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testStorageListChecksExpiryWithASingleBatchedZmscoreCallInsteadOfOnePerKey(TestContext testContext) {
+        Async async = testContext.async();
+
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scanResponse("0",
+                            "rest-storage:resources:some:path:a",
+                            "rest-storage:resources:some:path:b");
+                }
+            });
+            return null;
+        });
+        long past = System.currentTimeMillis() - 10_000;
+        when(redisAPI.zmscore(eq(Arrays.asList("rest-storage:expirable",
+                "rest-storage:resources:some:path:a", "rest-storage:resources:some:path:b")), any(Handler.class)))
+                .thenAnswer(invocation -> {
+                    MultiType scores = MultiType.create(2, false);
+                    scores.add(null);
+                    scores.add(BulkType.create(BufferImpl.buffer(String.valueOf(past)), false));
+                    ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                        @Override
+                        public Response result() {
+                            return scores;
+                        }
+                    });
+                    return null;
+                });
+
+        storage.list("/some/path", 1000, null, 0, event -> {
+            testContext.assertFalse(event.error);
+            testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths,
+                    "path b expired in the past and must be filtered out, path a has no expiry and must be kept");
+            verify(redisAPI, never()).zscore(anyString(), anyString(), any(Handler.class));
+            verify(redisAPI, times(1)).zmscore(anyList(), any(Handler.class));
             async.complete();
         });
     }
@@ -620,5 +868,37 @@ public class RedisStorageTest {
         public boolean failed() {
             return true;
         }
+    }
+
+    private static Response scanResponse(String cursor, String... keys) {
+        MultiType keyResponse = MultiType.create(keys.length, false);
+        for (String key : keys) {
+            keyResponse.add(SimpleStringType.create(key));
+        }
+        MultiType response = MultiType.create(2, false);
+        response.add(SimpleStringType.create(cursor));
+        response.add(keyResponse);
+        return response;
+    }
+
+    /**
+     * Stubs {@code redisAPI.zmscore(...)} to report every requested key as not expired (null score),
+     * matching the default fixture behaviour previously provided by per-key {@code zscore} stubs.
+     */
+    private void stubZmscoreAllActive() {
+        when(redisAPI.zmscore(anyList(), any(Handler.class))).thenAnswer(invocation -> {
+            List<String> args = (List<String>) invocation.getArguments()[0];
+            MultiType scores = MultiType.create(args.size() - 1, false);
+            for (int i = 1; i < args.size(); i++) {
+                scores.add(null);
+            }
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
+                @Override
+                public Response result() {
+                    return scores;
+                }
+            });
+            return null;
+        });
     }
 }

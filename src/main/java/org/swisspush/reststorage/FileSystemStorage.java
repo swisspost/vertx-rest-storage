@@ -321,9 +321,12 @@ public class FileSystemStorage implements Storage {
                         .filter(p -> filter == null || filter.isEmpty() || p.contains(filter))
                         .sorted()
                         .collect(Collectors.toList());
-                // offset/limit are computed as long to avoid overflow for large/adversarial cursor values;
-                // the result is safely narrowed to int only once bounded by matched.size() (an int-indexed List).
-                int toIndex = (int) Math.min(offset + limit, matched.size());
+                // offset is clamped to matched.size() before adding limit so "offset + limit" can never
+                // overflow (both operands are then bounded by int-range values), even for an adversarial
+                // cursor up to Long.MAX_VALUE; the result is safely narrowed to int only once bounded by
+                // matched.size() (an int-indexed List).
+                long clampedOffset = Math.min(offset, matched.size());
+                int toIndex = (int) Math.min(clampedOffset + limit, matched.size());
                 if (offset < matched.size()) {
                     result.paths.addAll(matched.subList((int) offset, toIndex));
                 }

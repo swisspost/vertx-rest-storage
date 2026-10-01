@@ -37,6 +37,28 @@ public class FilesystemStorageTest {
 
     private static final Logger logger = LoggerFactory.getLogger(FilesystemStorageTest.class);
 
+    @Test
+    public void listWithAdversarialCursorBeyondResultSetReportsCompletionInsteadOfOverflowedNextCursor(TestContext testContext) throws Exception {
+        // Regression test: cursor is a client-supplied long (RestStorageHandler only rejects cursor < 0,
+        // so values up to Long.MAX_VALUE are accepted). "offset + limit" must never overflow when offset
+        // is huge, otherwise a wrapped/truncated nextCursor could falsely claim more pages are available
+        // instead of correctly signalling pagination completion (nextCursor == 0).
+        Async async = testContext.async();
+        Vertx realVertx = Vertx.vertx();
+        String root = createPseudoFileStorageRoot();
+        new File(root + "/data").mkdirs();
+        new File(root + "/data/a").createNewFile();
+        new File(root + "/data/b").createNewFile();
+
+        FileSystemStorage storage = new FileSystemStorage(realVertx, newRestStorageWastefulExceptionFactory(), root);
+        storage.list("/data", 500, null, Long.MAX_VALUE, result -> {
+            testContext.assertFalse(result.error);
+            testContext.assertTrue(result.paths.isEmpty(), "no paths should be returned for a cursor far beyond the result set");
+            testContext.assertEquals(0L, result.nextCursor, "nextCursor must signal completion (0), not a wrapped/arbitrary value");
+            async.complete();
+        });
+    }
+
     @Test(expected=UnsupportedOperationException.class)
     public void testGetMemoryUsageNotYetImplemented(TestContext testContext){
         FileSystemStorage storage = new FileSystemStorage(mock(Vertx.class), newRestStorageWastefulExceptionFactory(), "/root");

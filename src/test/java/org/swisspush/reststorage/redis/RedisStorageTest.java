@@ -20,10 +20,13 @@ import org.mockito.Mockito;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
+import org.swisspush.reststorage.util.RedisVersion;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
@@ -50,6 +53,7 @@ public class RedisStorageTest {
         when(redisProvider.redis()).thenReturn(Future.succeededFuture(redisAPI));
         exceptionFactory = Mockito.spy(newRestStorageWastefulExceptionFactory());
 
+        stubRedisVersion("4.0.14");
         storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
     }
 
@@ -317,7 +321,39 @@ public class RedisStorageTest {
     }
 
     @Test
-    public void testStorageListChecksExpiryWithASingleBatchedZmscoreCallInsteadOfOnePerKey(TestContext testContext) {
+    public void testStorageListPreservesScanDuplicatesWithinAndAcrossPages(TestContext context) {
+        stubZmscoreAllActive();
+        when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "2")),
+                any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(Future.succeededFuture(
+                    scanResponse("17", "rest-storage:resources:some:path:a", "rest-storage:resources:some:path:a")));
+            return redisAPI;
+        });
+        when(redisAPI.scan(eq(Arrays.asList("17", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "2")),
+                any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(Future.succeededFuture(
+                    scanResponse("0", "rest-storage:resources:some:path:a", "rest-storage:resources:some:path:b")));
+            return redisAPI;
+        });
+        Async async = context.async();
+        storage.list("/some/path", 2, null, 0, first -> {
+            context.assertFalse(first.error);
+            context.assertEquals(Arrays.asList("/some/path/a", "/some/path/a"), first.paths);
+            context.assertEquals(17L, first.nextCursor);
+            storage.list("/some/path", 2, null, first.nextCursor, second -> {
+                context.assertFalse(second.error);
+                context.assertEquals(Arrays.asList("/some/path/a", "/some/path/b"), second.paths);
+                context.assertEquals(0L, second.nextCursor);
+                Set<String> uniquePaths = new HashSet<>(first.paths);
+                uniquePaths.addAll(second.paths);
+                context.assertEquals(new HashSet<>(Arrays.asList("/some/path/a", "/some/path/b")), uniquePaths);
+                async.complete();
+            });
+        });
+    }
+
+    @Test
+    public void testStorageListChecksExpiryWithASingleLuaCallOnRedis4(TestContext testContext) {
         Async async = testContext.async();
 
         when(redisAPI.scan(eq(Arrays.asList("0", "MATCH", "rest-storage:resources:some:path:*", "COUNT", "1000")), any(Handler.class))).thenAnswer(invocation -> {
@@ -332,19 +368,13 @@ public class RedisStorageTest {
             return null;
         });
         long past = System.currentTimeMillis() - 10_000;
-        when(redisAPI.zmscore(eq(Arrays.asList("rest-storage:expirable",
-                "rest-storage:resources:some:path:a", "rest-storage:resources:some:path:b")), any(Handler.class)))
+        when(redisAPI.eval(eq(Arrays.asList(RedisStorage.ZMSCORE_FALLBACK_SCRIPT, "1", "rest-storage:expirable",
+                "rest-storage:resources:some:path:a", "rest-storage:resources:some:path:b"))))
                 .thenAnswer(invocation -> {
                     MultiType scores = MultiType.create(2, false);
                     scores.add(null);
                     scores.add(BulkType.create(BufferImpl.buffer(String.valueOf(past)), false));
-                    ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
-                        @Override
-                        public Response result() {
-                            return scores;
-                        }
-                    });
-                    return null;
+                    return Future.succeededFuture(scores);
                 });
 
         storage.list("/some/path", 1000, null, 0, event -> {
@@ -352,7 +382,172 @@ public class RedisStorageTest {
             testContext.assertEquals(Arrays.asList("/some/path/a"), event.paths,
                     "path b expired in the past and must be filtered out, path a has no expiry and must be kept");
             verify(redisAPI, never()).zscore(anyString(), anyString(), any(Handler.class));
-            verify(redisAPI, times(1)).zmscore(anyList(), any(Handler.class));
+            verify(redisAPI, never()).zmscore(anyList());
+            verify(redisAPI, times(1)).eval(anyList());
+            async.complete();
+        });
+    }
+
+    @Test
+    public void testRedisVersionIsReusableAndCached(TestContext context) {
+        reset(redisAPI);
+        stubRedisVersion("6.2.14");
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
+        reset(redisProvider);
+        for (int i = 0; i < 2; i++) {
+            Async async = context.async();
+            storage.getRedisVersion().onComplete(event -> {
+                context.assertTrue(event.succeeded());
+                RedisVersion version = event.result();
+                context.assertEquals("6.2.14", version.toString());
+                context.assertTrue(version.isAtLeast(6, 2, 0));
+                context.assertTrue(version.isAtLeast(6, 2, 14));
+                context.assertTrue(version.isAtLeast(6, 1, 99));
+                context.assertTrue(version.isAtLeast(4, 9, 99));
+                context.assertFalse(version.isAtLeast(6, 2, 15));
+                context.assertFalse(version.isAtLeast(6, 3, 0));
+                context.assertFalse(version.isAtLeast(7, 0, 0));
+                async.complete();
+            });
+        }
+        verifyZeroInteractions(redisProvider);
+        verify(redisAPI, times(1)).info(eq(Collections.singletonList("server")), any(Handler.class));
+    }
+
+    @Test
+    public void testStorageListSelectsExpiryCommandByRedisVersion(TestContext context) {
+        for (String version : Arrays.asList("4.0.14", "6.0.20", "6.1.9", "6.2.0", "6.2.14", "7.0.0", "10.0.0")) {
+            reset(redisAPI);
+            stubRedisVersion(version);
+            storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
+            stubExpiryPage();
+            assertExpiryPage(context);
+            assertExpiryPage(context);
+
+            boolean supported = Arrays.asList("6.2.0", "6.2.14", "7.0.0", "10.0.0").contains(version);
+            verify(redisAPI, times(supported ? 2 : 0)).zmscore(eq(Arrays.asList("rest-storage:expirable",
+                    "rest-storage:resources:some:path:c", "rest-storage:resources:some:path:b",
+                    "rest-storage:resources:some:path:a")));
+            verify(redisAPI, times(supported ? 0 : 2)).eval(anyList());
+            verify(redisAPI, times(1)).info(eq(Collections.singletonList("server")), any(Handler.class));
+        }
+    }
+
+    @Test
+    public void testStorageListWaitsForStartupVersionCheck(TestContext context) {
+        reset(redisAPI);
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
+        ArgumentCaptor<Handler> infoHandler = ArgumentCaptor.forClass(Handler.class);
+        verify(redisAPI).info(eq(Collections.singletonList("server")), infoHandler.capture());
+        stubExpiryPage();
+        Async async = context.async();
+        storage.list("/some/path", 1000, null, 0, event -> {
+            context.assertFalse(event.error);
+            context.assertEquals(Arrays.asList("/some/path/a", "/some/path/c"), event.paths);
+            async.complete();
+        });
+        verify(redisAPI, never()).zmscore(anyList());
+        verify(redisAPI, never()).eval(anyList());
+        infoHandler.getValue().handle(Future.succeededFuture(SimpleStringType.create("redis_version:6.2.0\r\n")));
+        verify(redisAPI, times(1)).zmscore(anyList());
+        verify(redisAPI, times(1)).info(eq(Collections.singletonList("server")), any(Handler.class));
+    }
+
+    @Test
+    public void testStorageListKeepsStartupVersionForNewRedisConnection(TestContext context) {
+        redisAPI = mock(RedisAPI.class);
+        when(redisProvider.redis()).thenReturn(Future.succeededFuture(redisAPI));
+        stubRedisVersion("7.0.0");
+        stubExpiryPage();
+        assertExpiryPage(context);
+        verify(redisAPI, never()).zmscore(anyList());
+        verify(redisAPI, times(1)).eval(anyList());
+        verify(redisAPI, never()).info(eq(Collections.singletonList("server")), any(Handler.class));
+    }
+
+    @Test
+    public void testStorageListRetainsVersionDetectionErrorsWithoutRetrying(TestContext context) {
+        for (String info : Arrays.asList("# Server\r\n", "redis_version:invalid\r\n",
+                "redis_version:999999999999.2.0\r\n")) {
+            reset(redisAPI);
+            when(redisAPI.info(eq(Collections.singletonList("server")), any(Handler.class))).thenAnswer(invocation -> {
+                ((Handler<AsyncResult<Response>>) invocation.getArguments()[1])
+                        .handle(Future.succeededFuture(SimpleStringType.create(info)));
+                return redisAPI;
+            });
+            storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
+            stubExpiryPage();
+            Async async = context.async();
+            storage.list("/some/path", 1000, null, 0, event -> {
+                context.assertTrue(event.error);
+                context.assertTrue(event.errorMessage.contains("redis_version"));
+                async.complete();
+            });
+            verify(redisAPI, never()).zmscore(anyList());
+            verify(redisAPI, never()).eval(anyList());
+            stubRedisVersion("7.0.0");
+            assertExpiryError(context, "redis_version");
+            verify(redisAPI, times(1)).info(eq(Collections.singletonList("server")), any(Handler.class));
+        }
+    }
+
+    @Test
+    public void testStorageListReportsInfoAndExpiryCommandFailures(TestContext context) {
+        reset(redisAPI);
+        when(redisAPI.info(eq(Collections.singletonList("server")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(Future.failedFuture("INFO denied"));
+            return redisAPI;
+        });
+        storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
+        stubExpiryPage();
+        assertExpiryError(context, "redisAPI.info([\"server\"]) failed");
+        for (String version : Arrays.asList("4.0.14", "7.0.0")) {
+            stubRedisVersion(version);
+            storage = new RedisStorage(mock(Vertx.class), new ModuleConfiguration(), redisProvider, exceptionFactory);
+            when(redisAPI.eval(anyList())).thenReturn(Future.failedFuture("lookup failed"));
+            when(redisAPI.zmscore(anyList())).thenReturn(Future.failedFuture("lookup failed"));
+            assertExpiryError(context, "lookup failed");
+        }
+    }
+
+    private void assertExpiryError(TestContext context, String message) {
+        Async async = context.async();
+        storage.list("/some/path", 1000, null, 0, event -> {
+            context.assertTrue(event.error);
+            context.assertTrue(event.errorMessage.contains(message));
+            async.complete();
+        });
+    }
+
+    private void stubRedisVersion(String version) {
+        when(redisAPI.info(eq(Collections.singletonList("server")), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1])
+                    .handle(Future.succeededFuture(SimpleStringType.create("# Server\r\nredis_version:" + version + "\r\n")));
+            return redisAPI;
+        });
+    }
+
+    private void stubExpiryPage() {
+        when(redisAPI.scan(anyList(), any(Handler.class))).thenAnswer(invocation -> {
+            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(Future.succeededFuture(
+                    scanResponse("42", "rest-storage:resources:some:path:c",
+                            "rest-storage:resources:some:path:b", "rest-storage:resources:some:path:a")));
+            return redisAPI;
+        });
+        MultiType scores = MultiType.create(3, false);
+        scores.add(BulkType.create(BufferImpl.buffer(String.valueOf(System.currentTimeMillis() + 60_000)), false));
+        scores.add(BulkType.create(BufferImpl.buffer(String.valueOf(System.currentTimeMillis() - 60_000)), false));
+        scores.add(null);
+        when(redisAPI.eval(anyList())).thenReturn(Future.succeededFuture(scores));
+        when(redisAPI.zmscore(anyList())).thenReturn(Future.succeededFuture(scores));
+    }
+
+    private void assertExpiryPage(TestContext context) {
+        Async async = context.async();
+        storage.list("/some/path", 1000, null, 0, event -> {
+            context.assertFalse(event.error);
+            context.assertEquals(Arrays.asList("/some/path/a", "/some/path/c"), event.paths);
+            context.assertEquals(42L, event.nextCursor);
             async.complete();
         });
     }
@@ -882,23 +1077,20 @@ public class RedisStorageTest {
     }
 
     /**
-     * Stubs {@code redisAPI.zmscore(...)} to report every requested key as not expired (null score),
-     * matching the default fixture behaviour previously provided by per-key {@code zscore} stubs.
+     * Stubs {@code redisAPI.eval(...)} (the batched {@code ZSCORE} fallback, see
+     * {@code RedisStorage#ZMSCORE_FALLBACK_SCRIPT}) to report every requested key as not expired
+     * (null score), matching the default fixture behaviour previously provided by per-key
+     * {@code zscore} stubs.
      */
     private void stubZmscoreAllActive() {
-        when(redisAPI.zmscore(anyList(), any(Handler.class))).thenAnswer(invocation -> {
+        when(redisAPI.eval(anyList())).thenAnswer(invocation -> {
             List<String> args = (List<String>) invocation.getArguments()[0];
-            MultiType scores = MultiType.create(args.size() - 1, false);
-            for (int i = 1; i < args.size(); i++) {
+            int keyCount = args.size() - 3;
+            MultiType scores = MultiType.create(keyCount, false);
+            for (int i = 0; i < keyCount; i++) {
                 scores.add(null);
             }
-            ((Handler<AsyncResult<Response>>) invocation.getArguments()[1]).handle(new SuccessAsyncResult() {
-                @Override
-                public Response result() {
-                    return scores;
-                }
-            });
-            return null;
+            return Future.succeededFuture(scores);
         });
     }
 }

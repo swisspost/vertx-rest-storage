@@ -21,7 +21,9 @@ import org.swisspush.reststorage.redis.RedisStorageIntegrationTestCase;
 import org.swisspush.reststorage.util.HttpRequestHeader;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
@@ -291,13 +293,11 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
             expectedPaths.add(path);
         }
 
-        List<String> collectedPaths = new ArrayList<>();
+        Set<String> collectedPaths = new HashSet<>();
         String cursor = "0";
         int loops = 0;
         do {
-            // Note: Redis SCAN's COUNT is only a hint, not a hard page-size cap, so a given page may
-            // occasionally contain more than "limit" paths - what matters is that every path is
-            // eventually returned exactly once and that nextCursor reliably signals completion.
+            // SCAN can repeat paths and COUNT is only a hint; collect unique paths until completion.
             Response response = given()
                     .queryParam("storageExpand", "true")
                     .queryParam("listOnly", "true")
@@ -316,10 +316,7 @@ public class StorageExpandIntegrationTest extends RedisStorageIntegrationTestCas
             context.assertTrue(loops <= 10, "too many pagination loops, possible infinite loop");
         } while (!"0".equals(cursor));
 
-        context.assertTrue(loops > 1, "expected more than a single page given limit=2 and 5 resources");
-        collectedPaths.sort(null);
-        expectedPaths.sort(null);
-        context.assertEquals(expectedPaths, collectedPaths);
+        context.assertEquals(new HashSet<>(expectedPaths), collectedPaths);
 
         async.complete();
     }

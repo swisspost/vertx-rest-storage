@@ -44,14 +44,17 @@ public interface Storage {
     /**
      * Lists all document resource paths below the provided path without loading the document bodies.
      * <p>
-     * This operation is paginated: at most {@code limit} paths are returned per call, together with an opaque
+     * This operation is paginated: each page is returned together with an opaque
      * {@code nextCursor} in the result which can be passed back as {@code cursor} to fetch the next page. A
      * {@code nextCursor} of {@code 0} indicates that iteration is complete.
      * <p>
-     * Redis implementation note: this operation is not Redis Cluster safe.
+     * Redis implementation note: {@code limit} is a SCAN batch-size hint, not a hard page-size cap.
+     * Paths may repeat within or across pages; clients must deduplicate across the entire iteration
+     * before processing paths that should be handled once. The listing is not a snapshot, so paths
+     * added or removed during iteration may or may not be returned. This operation is not Redis Cluster safe.
      *
      * @param path the base path whose descendant document paths should be listed
-     * @param limit the maximum number of resource paths to return in this page
+     * @param limit the requested page size (a batch-size hint for Redis)
      * @param filter an optional literal substring; when provided, only paths containing it are returned.
      *               Implementations are encouraged to apply this filter natively (e.g. as part of a key scan
      *               pattern) instead of post-filtering the full result set

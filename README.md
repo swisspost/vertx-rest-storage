@@ -37,7 +37,36 @@ Runs either as a module or can be integrated into an existing application by ins
 4. run the fatjar with `java -jar build/libs/rest-storage-x.x.x-all.jar
 5. you get a rest-storage, that stores to the filesystem in the directory where you started it. If you want to use the rest-storage with redis, you have to pass the configuration over a json file with `-conf conf.json`
 
+## Redis version compatibility
+
+Each Redis storage instance reads `INFO server` once at startup and keeps the server version in memory for its lifetime.
+Requests and reconnects do not trigger another version lookup. The Redis user must have permission to run `INFO`.
+
+LIST checks resource expiration in a single Redis round trip:
+
+| Redis version | Expiry lookup |
+|:--------------|:--------------|
+| 6.2 or newer | Native `ZMSCORE` |
+| Older than 6.2, including Redis 4 | Batched Lua `ZSCORE` lookup using `EVAL` |
+
+LIST expiry lookups wait for the startup version check to finish.
+If the check fails or returns a missing or invalid version, the failure is logged and LIST expiry lookups report an error.
+The check is not retried; restart the storage instance after resolving the problem.
+
+Other commands can reuse the cached version without querying Redis:
+
+```java
+storage.getRedisVersion().onSuccess(version -> {
+    boolean supported = version.isAtLeast(6, 2, 0);
+    // Select the appropriate command for this version.
+});
+```
+
+`getRedisVersion()` returns the same cached `Future<RedisVersion>`, including a pending startup check or its failure.
+The `RedisVersion` type and version lookup logic are in `org.swisspush.reststorage.util`.
+
 ## Features
+
 ### GET
 Invoking GET request on a leave (document) returns the content of the resource.
 > GET /storage/resources/resource_1
@@ -184,6 +213,10 @@ results even when more paths are available, and conversely a single `SCAN` round
 requested. Pages are never truncated to avoid silently dropping paths. Continue requesting pages with
 **nextCursor** until its value is `0`.
 
+Redis `SCAN` may return the same path more than once, within a page or across successive pages.
+The server does not track previously returned paths, so this is not an exactly-once listing.
+Clients must deduplicate paths across the entire iteration before scheduling work that should run once per document.
+The listing is not a snapshot: paths added or removed during iteration may or may not be returned.
 
 `Attention:` When using Redis storage, this operation is not Redis Cluster safe. The current implementation uses Redis `SCAN`, which is node-local in Redis Cluster.
 

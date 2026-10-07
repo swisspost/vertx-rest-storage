@@ -30,6 +30,7 @@ import org.swisspush.reststorage.lock.impl.RedisBasedLock;
 import org.swisspush.reststorage.util.GZIPUtil;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
+import org.swisspush.reststorage.util.RedisVersion;
 import org.swisspush.reststorage.util.ResourceNameUtil;
 
 import java.io.BufferedReader;
@@ -92,6 +93,20 @@ public class RedisStorage implements Storage {
 
     private static final String redisProviderFailMsg = "redisProvider.redis() failed";
 
+    private final Future<RedisVersion> redisVersion;
+
+    /**
+     * Batched equivalent of {@code ZSCORE expirableSet member} for an arbitrary number of members in a
+     * single round trip on servers older than Redis 6.2, which do not support {@code ZMSCORE}.
+     * KEYS[1] is the expirable zset, ARGV[1..n] are the members to look up.
+     */
+    static final String ZMSCORE_FALLBACK_SCRIPT =
+            "local scores = {}\n" +
+            "for i = 1, #ARGV do\n" +
+            "    scores[i] = redis.call('zscore', KEYS[1], ARGV[i])\n" +
+            "end\n" +
+            "return scores";
+
     public RedisStorage(
         Vertx vertx,
         ModuleConfiguration config,
@@ -117,6 +132,12 @@ public class RedisStorage implements Storage {
         this.ID = UUID.randomUUID().toString();
         this.hostAndPort = config.getRedisHost() + ":" + config.getPort();
         this.lock = new RedisBasedLock(redisProvider, exceptionFactory);
+
+        this.redisVersion = redisProvider.redis().compose(redisAPI ->
+                RedisVersion.readRedisVersion(redisAPI, exceptionFactory));
+        redisVersion.onFailure(cause ->
+                log.error("Unable to determine Redis version for storage {}; LIST expiry lookup is unavailable",
+                        storageIdentifier, cause));
 
         // load all the lua scripts
         LuaScriptState luaGetScriptState = new LuaScriptState(LuaScript.GET, false);
@@ -149,6 +170,15 @@ public class RedisStorage implements Storage {
         }
 
         registerMetricsGathering(config);
+    }
+
+    /**
+     * Returns the server version fetched once at startup and kept in memory for this storage instance.
+     * Commands can await this future and use {@link RedisVersion#isAtLeast(int, int, int)} to check
+     * their minimum supported version. Startup lookup failures are retained without retrying.
+     */
+    public Future<RedisVersion> getRedisVersion() {
+        return redisVersion;
     }
 
     private void registerMetricsGathering(ModuleConfiguration configuration){
@@ -734,6 +764,7 @@ public class RedisStorage implements Storage {
     /**
      * Performs exactly one Redis {@code SCAN} round starting at the given cursor, letting the caller
      * paginate across multiple {@code list} invocations instead of eagerly collecting the whole key space.
+     * Redis may repeat keys within or across rounds; callers must deduplicate across the iteration.
      */
     private void scanResourcePage(RedisAPI redisAPI, long cursor, String matchPattern, int limit, Handler<ScanPage> handler) {
         // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
@@ -779,8 +810,8 @@ public class RedisStorage implements Storage {
      * As a consequence a single page occasionally contains slightly more than {@code limit} paths; the
      * {@code nextCursor} returned alongside still reliably indicates whether more data remains.
      * <p>
-     * Expiry is checked with a single batched {@code ZMSCORE} call instead of one {@code ZSCORE} call
-     * per key, avoiding one Redis round trip per matched key.
+     * Expiry is checked in one round trip using {@code ZMSCORE} on Redis 6.2+ or a batched Lua
+     * {@code ZSCORE} lookup on older servers.
      */
     private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, long nextCursor, Handler<PathListResource> handler) {
         if (keys.isEmpty()) {
@@ -788,15 +819,22 @@ public class RedisStorage implements Storage {
             return;
         }
 
-        List<String> zmscoreArgs = new ArrayList<>(keys.size() + 1);
-        zmscoreArgs.add(expirableSet);
-        zmscoreArgs.addAll(keys);
         long now = System.currentTimeMillis();
-        redisAPI.zmscore(zmscoreArgs, scoreEv -> {
+        redisVersion.compose(version -> {
+            boolean supported = version.isAtLeast(6, 2, 0);
+            List<String> args = new ArrayList<>(keys.size() + 3);
+            if (!supported) {
+                args.add(ZMSCORE_FALLBACK_SCRIPT);
+                args.add("1");
+            }
+            args.add(expirableSet);
+            args.addAll(keys);
+            return supported ? redisAPI.zmscore(args) : redisAPI.eval(args);
+        }).onComplete(scoreEv -> {
             if (scoreEv.failed()) {
-                log.error("LIST zmscore request in storage {} failed with message", storageIdentifier,
-                        exceptionFactory.newException("redisAPI.zmscore() failed", scoreEv.cause()));
-                pathListError(handler, "redisAPI.zmscore() failed: " + scoreEv.cause().getMessage());
+                log.error("LIST expiry lookup in storage {} failed", storageIdentifier,
+                        exceptionFactory.newException("Redis expiry lookup failed", scoreEv.cause()));
+                pathListError(handler, "Redis expiry lookup failed: " + scoreEv.cause().getMessage());
                 return;
             }
             Response scores = scoreEv.result();

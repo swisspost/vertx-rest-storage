@@ -79,7 +79,7 @@ public class ResourceCompressionIntegrationTest extends RedisStorageIntegrationT
         putResource("{ \"foo\": \"bar\" }", true, 200);
 
         // cripple compressed data to make it impossible to decompress
-        jedis.hset("rest-storage:resources:res", "resource", "xxx");
+        jedis.hset(resourceKey("res"), "resource", "xxx");
 
         when()
                 .get("res")

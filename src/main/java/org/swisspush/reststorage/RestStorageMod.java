@@ -10,6 +10,8 @@ import io.vertx.core.http.HttpServerRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
+import org.swisspush.reststorage.migration.MigrateTool;
+import org.swisspush.reststorage.migration.tasks.ClusterPartitionMigrationTask;
 import org.swisspush.reststorage.redis.DefaultRedisProvider;
 import org.swisspush.reststorage.redis.RedisProvider;
 import org.swisspush.reststorage.redis.RedisStorage;
@@ -112,7 +114,31 @@ public class RestStorageMod extends AbstractVerticle {
 
         redisProvider.redis().onComplete(event -> {
             if(event.succeeded()) {
-                initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
+                MigrateTool migrateTool = new MigrateTool(vertx, redisProvider, this.hashCode() + "");
+                if (moduleConfiguration.isRedisClusterPartitioningEnabled()) {
+                    migrateTool.addTask(new ClusterPartitionMigrationTask(redisProvider, moduleConfiguration));
+                }
+
+                migrateTool.start().onComplete(migrateResult -> {
+                    if (migrateResult.failed()) {
+                        if (moduleConfiguration.isRedisClusterPartitioningEnabled()) {
+                            // Unlike other (currently non-existent) migration tasks, failing to migrate
+                            // pre-existing (untagged) data before switching to tagged-only key access
+                            // would make that data silently invisible to GET/DELETE/cleanup from here on -
+                            // refuse to start rather than risk that.
+                            log.error("Migration failed while Redis Cluster partitioning is enabled; refusing to " +
+                                    "start RestStorageMod, since pre-existing (untagged) data could otherwise " +
+                                    "become invisible", migrateResult.cause());
+                            initPromise.fail(exceptionFactory.newException("Cluster partitioning migration failed",
+                                    migrateResult.cause()));
+                            return;
+                        }
+                        log.warn("Migration failed, will continue to start the RestStorageMod anyway", migrateResult.cause());
+                    } else {
+                        log.info("Migration done, will continue to start the RestStorageMod");
+                    }
+                    initPromise.complete(new RedisStorage(vertx, moduleConfiguration, redisProvider, exceptionFactory));
+                });
             } else {
                 initPromise.fail(exceptionFactory.newException("redisProvider.redis() failed", event.cause()));
             }

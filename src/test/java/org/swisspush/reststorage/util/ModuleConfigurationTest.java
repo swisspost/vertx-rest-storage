@@ -64,6 +64,20 @@ public class ModuleConfigurationTest {
         testContext.assertFalse(config.isReturn200onDeleteNonExisting());
         testContext.assertEquals(config.getMaxRedisWaitingHandlers(), 2048);
         testContext.assertEquals(config.getMaxStorageExpandSubresources(), 1000);
+        testContext.assertFalse(config.isRedisClusterPartitioningEnabled());
+    }
+
+    @Test
+    public void testRedisClusterPartitioningEnabledOverride(TestContext testContext) {
+        ModuleConfiguration config = new ModuleConfiguration()
+                .redisClusterPartitioningEnabled(true);
+
+        // go through JSON encode/decode
+        String json = config.asJsonObject().encodePrettily();
+        testContext.assertTrue(new JsonObject(json).getBoolean("redisClusterPartitioningEnabled"));
+
+        config = ModuleConfiguration.fromJsonObject(new JsonObject(json));
+        testContext.assertTrue(config.isRedisClusterPartitioningEnabled());
     }
 
     @Test

@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
+import org.swisspush.reststorage.PathListResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
@@ -37,6 +38,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 
 public class S3FileSystemStorage implements Storage {
@@ -334,6 +337,54 @@ public class S3FileSystemStorage implements Storage {
     @Override
     public void storageExpand(String path, String etag, List<String> subResources, Handler<Resource> handler) {
         throw new UnsupportedOperationException("Method 'storageExpand' not supported in S3FileSystemStorage");
+    }
+
+    @Override
+    public void list(String path, int limit, String filter, long cursor, Handler<PathListResource> handler) {
+        vertx.executeBlocking(promise -> {
+            PathListResource result = new PathListResource();
+            result.paths = new java.util.ArrayList<>();
+            Path fullDirPath = canonicalize(path, true);
+            Path fullFilePath = canonicalize(path, false);
+            if (Files.isRegularFile(fullFilePath, LinkOption.NOFOLLOW_LINKS)) {
+                promise.complete(result);
+                return;
+            }
+            if (!Files.isDirectory(fullDirPath, LinkOption.NOFOLLOW_LINKS)) {
+                result.exists = false;
+                promise.complete(result);
+                return;
+            }
+            final long offset = Math.max(cursor, 0L);
+            try (Stream<Path> pathStream = Files.walk(fullDirPath)) {
+                List<String> matched = pathStream
+                        .filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS))
+                        .map(this::toStoragePath)
+                        .filter(p -> filter == null || filter.isEmpty() || p.contains(filter))
+                        .sorted()
+                        .collect(Collectors.toList());
+                // offset is clamped to matched.size() before adding limit so "offset + limit" can never
+                // overflow (both operands are then bounded by int-range values), even for an adversarial
+                // cursor up to Long.MAX_VALUE; the result is safely narrowed to int only once bounded by
+                // matched.size() (an int-indexed List).
+                long clampedOffset = Math.min(offset, matched.size());
+                int toIndex = (int) Math.min(clampedOffset + limit, matched.size());
+                if (offset < matched.size()) {
+                    result.paths.addAll(matched.subList((int) offset, toIndex));
+                }
+                result.nextCursor = toIndex < matched.size() ? toIndex : 0;
+                promise.complete(result);
+            } catch (IOException e) {
+                result.error = true;
+                result.errorMessage = e.getMessage();
+                promise.complete(result);
+            }
+        }, event -> handler.handle((PathListResource) event.result()));
+    }
+
+    private String toStoragePath(Path path) {
+        String relativePath = root.relativize(path).toString().replace(File.separatorChar, '/');
+        return "/" + relativePath;
     }
 
     /**

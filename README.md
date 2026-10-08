@@ -37,7 +37,36 @@ Runs either as a module or can be integrated into an existing application by ins
 4. run the fatjar with `java -jar build/libs/rest-storage-x.x.x-all.jar
 5. you get a rest-storage, that stores to the filesystem in the directory where you started it. If you want to use the rest-storage with redis, you have to pass the configuration over a json file with `-conf conf.json`
 
+## Redis version compatibility
+
+Each Redis storage instance reads `INFO server` once at startup and keeps the server version in memory for its lifetime.
+Requests and reconnects do not trigger another version lookup. The Redis user must have permission to run `INFO`.
+
+LIST checks resource expiration in a single Redis round trip:
+
+| Redis version | Expiry lookup |
+|:--------------|:--------------|
+| 6.2 or newer | Native `ZMSCORE` |
+| Older than 6.2, including Redis 4 | Batched Lua `ZSCORE` lookup using `EVAL` |
+
+LIST expiry lookups wait for the startup version check to finish.
+If the check fails or returns a missing or invalid version, the failure is logged and LIST expiry lookups report an error.
+The check is not retried; restart the storage instance after resolving the problem.
+
+Other commands can reuse the cached version without querying Redis:
+
+```java
+storage.getRedisVersion().onSuccess(version -> {
+    boolean supported = version.isAtLeast(6, 2, 0);
+    // Select the appropriate command for this version.
+});
+```
+
+`getRedisVersion()` returns the same cached `Future<RedisVersion>`, including a pending startup check or its failure.
+The `RedisVersion` type and version lookup logic are in `org.swisspush.reststorage.util`.
+
 ## Features
+
 ### GET
 Invoking GET request on a leave (document) returns the content of the resource.
 > GET /storage/resources/resource_1
@@ -137,6 +166,59 @@ The amount of sub resources that can be provided is defined in the configuration
 
 To override this for a single request, add the following request header with an appropriate value:
 > x-max-expand-resources: 1500
+
+#### List only
+
+To list all document resource paths below a collection without loading the document bodies, add the **listOnly=true** URL parameter together with **storageExpand=true**:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true**
+
+This returns a JSON response containing the matching document paths and a pagination cursor:
+
+```json
+{
+  "paths": [
+    "/yourStorageURL/collection/resource1",
+    "/yourStorageURL/collection/subCollection/resource2"
+  ],
+  "nextCursor": 0
+}
+```
+
+This can be used to discover deeply nested document resources before deciding which large resource bodies to load.
+
+To return only matching paths, add the optional **filter** URL parameter. Paths containing the filter value are
+returned. The filter is treated as a literal string and is limited to 256 characters:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&filter=resource2**
+
+To limit the amount of returned paths, add the optional **limit** URL parameter. When omitted, up to 500
+paths are requested per page. Requesting a value greater than 500 results in a _400 Bad Request_ response. When
+combined with **filter**, the filter is applied first (natively, e.g. as part of the Redis key scan):
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&limit=50**
+
+Each response is a single page of results. The **nextCursor** field is a non-negative integer indicating whether
+more results are available: a value of `0` means there are no more results, while any other value is an opaque
+numeric cursor that must be sent back as the optional **cursor** URL parameter to fetch the next page:
+
+**POST /yourStorageURL/collection?storageExpand=true&listOnly=true&limit=50&cursor=17**
+
+The **cursor** value returned by one call is only valid for subsequent calls against the same collection and the
+same storage backend. A negative or non-numeric **cursor** results in a _400 Bad Request_ response.
+
+For Redis storage, **limit** only controls the requested `SCAN` batch size (`COUNT`); it is a hint, not a hard
+cap. A page may therefore contain fewer or, occasionally, more than **limit** paths - Redis may return fewer
+results even when more paths are available, and conversely a single `SCAN` round can return more matches than
+requested. Pages are never truncated to avoid silently dropping paths. Continue requesting pages with
+**nextCursor** until its value is `0`.
+
+Redis `SCAN` may return the same path more than once, within a page or across successive pages.
+The server does not track previously returned paths, so this is not an exactly-once listing.
+Clients must deduplicate paths across the entire iteration before scheduling work that should run once per document.
+The listing is not a snapshot: paths added or removed during iteration may or may not be returned.
+
+`Attention:` When using Redis storage, this operation is not Redis Cluster safe. The current implementation uses Redis `SCAN`, which is node-local in Redis Cluster.
 
 
 ### Reject PUT requests on low memory (redis only)

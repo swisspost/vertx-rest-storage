@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.swisspush.reststorage.CollectionResource;
 import org.swisspush.reststorage.DocumentResource;
+import org.swisspush.reststorage.PathListResource;
 import org.swisspush.reststorage.Resource;
 import org.swisspush.reststorage.Storage;
 import org.swisspush.reststorage.exception.RestStorageExceptionFactory;
@@ -29,6 +30,7 @@ import org.swisspush.reststorage.lock.impl.RedisBasedLock;
 import org.swisspush.reststorage.util.GZIPUtil;
 import org.swisspush.reststorage.util.LockMode;
 import org.swisspush.reststorage.util.ModuleConfiguration;
+import org.swisspush.reststorage.util.RedisVersion;
 import org.swisspush.reststorage.util.ResourceNameUtil;
 
 import java.io.BufferedReader;
@@ -91,6 +93,20 @@ public class RedisStorage implements Storage {
 
     private static final String redisProviderFailMsg = "redisProvider.redis() failed";
 
+    private final Future<RedisVersion> redisVersion;
+
+    /**
+     * Batched equivalent of {@code ZSCORE expirableSet member} for an arbitrary number of members in a
+     * single round trip on servers older than Redis 6.2, which do not support {@code ZMSCORE}.
+     * KEYS[1] is the expirable zset, ARGV[1..n] are the members to look up.
+     */
+    static final String ZMSCORE_FALLBACK_SCRIPT =
+            "local scores = {}\n" +
+            "for i = 1, #ARGV do\n" +
+            "    scores[i] = redis.call('zscore', KEYS[1], ARGV[i])\n" +
+            "end\n" +
+            "return scores";
+
     public RedisStorage(
         Vertx vertx,
         ModuleConfiguration config,
@@ -116,6 +132,12 @@ public class RedisStorage implements Storage {
         this.ID = UUID.randomUUID().toString();
         this.hostAndPort = config.getRedisHost() + ":" + config.getPort();
         this.lock = new RedisBasedLock(redisProvider, exceptionFactory);
+
+        this.redisVersion = redisProvider.redis().compose(redisAPI ->
+                RedisVersion.readRedisVersion(redisAPI, exceptionFactory));
+        redisVersion.onFailure(cause ->
+                log.error("Unable to determine Redis version for storage {}; LIST expiry lookup is unavailable",
+                        storageIdentifier, cause));
 
         // load all the lua scripts
         LuaScriptState luaGetScriptState = new LuaScriptState(LuaScript.GET, false);
@@ -148,6 +170,15 @@ public class RedisStorage implements Storage {
         }
 
         registerMetricsGathering(config);
+    }
+
+    /**
+     * Returns the server version fetched once at startup and kept in memory for this storage instance.
+     * Commands can await this future and use {@link RedisVersion#isAtLeast(int, int, int)} to check
+     * their minimum supported version. Startup lookup failures are retained without retrying.
+     */
+    public Future<RedisVersion> getRedisVersion() {
+        return redisVersion;
     }
 
     private void registerMetricsGathering(ModuleConfiguration configuration){
@@ -668,6 +699,192 @@ public class RedisStorage implements Storage {
                 String.valueOf(subResources.size())
         );
         reloadScriptIfLoglevelChangedAndExecuteRedisCommand(LuaScript.STORAGE_EXPAND, new StorageExpand(keys, arguments, handler, etag), 0);
+    }
+
+    @Override
+    public void list(String path, int limit, String filter, long cursor, Handler<PathListResource> handler) {
+        final String key = encodePath(path);
+        final String matchPattern = buildListMatchPattern(key, filter);
+        redisProvider.redis().onComplete(redisEv -> {
+            if (redisEv.failed()) {
+                log.error("LIST request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException(redisProviderFailMsg, redisEv.cause()));
+                pathListError(handler, redisProviderFailMsg);
+                return;
+            }
+            scanResourcePage(redisEv.result(), cursor, matchPattern, limit, page -> {
+                if (page.error) {
+                    pathListError(handler, page.errorMessage);
+                } else {
+                    filterExpiredPaths(redisEv.result(), key, page.keys, page.nextCursor, handler);
+                }
+            });
+        });
+    }
+
+    /**
+     * Builds the Redis {@code SCAN MATCH} glob pattern used by {@link #list(String, int, String, long, Handler)}.
+     * <p>
+     * The optional filter is encoded the same way resource paths are encoded as Redis keys (colons/semicolons
+     * escaped, slashes turned into colons) and embedded as a literal glob fragment surrounded by wildcards, so
+     * that only keys already containing the filter substring are returned by Redis itself. This avoids fetching
+     * the full descendant key set and filtering it again in a loop.
+     *
+     * @param key the already Redis-encoded base path
+     * @param filter the optional literal substring filter, may be null or empty
+     * @return the glob pattern to use with Redis {@code SCAN ... MATCH}
+     */
+    private String buildListMatchPattern(String key, String filter) {
+        StringBuilder pattern = new StringBuilder(redisResourcesPrefix).append(escapeRedisGlob(key));
+        if (!key.isEmpty()) {
+            pattern.append(':');
+        }
+        pattern.append('*');
+        if (filter != null && !filter.isEmpty()) {
+            pattern.append(escapeRedisGlob(encodeFilter(filter))).append('*');
+        }
+        return pattern.toString();
+    }
+
+    private String encodeFilter(String filter) {
+        return ResourceNameUtil.replaceColonsAndSemiColons(filter).replaceAll("/", ":");
+    }
+
+    /**
+     * Result of a single Redis {@code SCAN} round: the matched keys of this page plus the cursor to resume
+     * scanning ({@code 0} when the scan is complete), or an error.
+     */
+    private static class ScanPage {
+        List<String> keys = Collections.emptyList();
+        long nextCursor = 0;
+        boolean error;
+        String errorMessage;
+    }
+
+    /**
+     * Performs exactly one Redis {@code SCAN} round starting at the given cursor, letting the caller
+     * paginate across multiple {@code list} invocations instead of eagerly collecting the whole key space.
+     * Redis may repeat keys within or across rounds; callers must deduplicate across the iteration.
+     */
+    private void scanResourcePage(RedisAPI redisAPI, long cursor, String matchPattern, int limit, Handler<ScanPage> handler) {
+        // NON Cluster safe: SCAN is node-local in Redis Cluster and this implementation scans only one RedisAPI connection.
+        redisAPI.scan(Arrays.asList(String.valueOf(cursor), "MATCH", matchPattern, "COUNT", String.valueOf(limit)), scanEv -> {
+            if (scanEv.failed()) {
+                log.error("LIST scan request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException("redisAPI.scan() failed", scanEv.cause()));
+                ScanPage page = new ScanPage();
+                page.error = true;
+                page.errorMessage = "redisAPI.scan() failed: " + scanEv.cause().getMessage();
+                handler.handle(page);
+                return;
+            }
+            Response response = scanEv.result();
+            ScanPage page = new ScanPage();
+            try {
+                // SCAN's cursor is an unsigned 32-bit value in Redis and parsed as an unsigned long here
+                // (rather than Integer.parseUnsignedInt) so it never wraps into a negative Java value,
+                // which would otherwise be rejected as invalid by callers that reject negative cursors.
+                page.nextCursor = Long.parseUnsignedLong(response.get(0).toString());
+            } catch (NumberFormatException ex) {
+                page.error = true;
+                page.errorMessage = "redisAPI.scan() returned a non-numeric cursor: " + response.get(0);
+                handler.handle(page);
+                return;
+            }
+            List<String> keys = new ArrayList<>();
+            for (Response keyResponse : response.get(1)) {
+                keys.add(keyResponse.toString());
+            }
+            page.keys = keys;
+            handler.handle(page);
+        });
+    }
+
+    /**
+     * Filters out expired keys from a single {@code SCAN} page and reports the surviving paths.
+     * <p>
+     * Note: {@code limit}/{@code COUNT} is only a hint to Redis' {@code SCAN} - a single round can
+     * legitimately return more matches than requested. All matches of this page are therefore always
+     * reported (never truncated): truncating here would silently drop paths, since the underlying
+     * {@code SCAN} cursor has already moved past them and they could never be returned on a later page.
+     * As a consequence a single page occasionally contains slightly more than {@code limit} paths; the
+     * {@code nextCursor} returned alongside still reliably indicates whether more data remains.
+     * <p>
+     * Expiry is checked in one round trip using {@code ZMSCORE} on Redis 6.2+ or a batched Lua
+     * {@code ZSCORE} lookup on older servers.
+     */
+    private void filterExpiredPaths(RedisAPI redisAPI, String key, List<String> keys, long nextCursor, Handler<PathListResource> handler) {
+        if (keys.isEmpty()) {
+            handleEmptyPathList(redisAPI, key, nextCursor, handler);
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        redisVersion.compose(version -> {
+            boolean supported = version.isAtLeast(6, 2, 0);
+            List<String> args = new ArrayList<>(keys.size() + 3);
+            if (!supported) {
+                args.add(ZMSCORE_FALLBACK_SCRIPT);
+                args.add("1");
+            }
+            args.add(expirableSet);
+            args.addAll(keys);
+            return supported ? redisAPI.zmscore(args) : redisAPI.eval(args);
+        }).onComplete(scoreEv -> {
+            if (scoreEv.failed()) {
+                log.error("LIST expiry lookup in storage {} failed", storageIdentifier,
+                        exceptionFactory.newException("Redis expiry lookup failed", scoreEv.cause()));
+                pathListError(handler, "Redis expiry lookup failed: " + scoreEv.cause().getMessage());
+                return;
+            }
+            Response scores = scoreEv.result();
+            List<String> paths = new ArrayList<>(keys.size());
+            for (int i = 0; i < keys.size(); i++) {
+                Response score = scores.get(i);
+                if (score == null || Double.parseDouble(score.toString()) >= now) {
+                    paths.add(decodeResourceKey(keys.get(i)));
+                }
+            }
+            Collections.sort(paths);
+            PathListResource result = new PathListResource();
+            result.paths = paths;
+            result.nextCursor = nextCursor;
+            handler.handle(result);
+        });
+    }
+
+    private void handleEmptyPathList(RedisAPI redisAPI, String key, long nextCursor, Handler<PathListResource> handler) {
+        redisAPI.exists(Arrays.asList(redisResourcesPrefix + key, redisCollectionsPrefix + key), existsEv -> {
+            PathListResource result = new PathListResource();
+            result.paths = Collections.emptyList();
+            result.nextCursor = nextCursor;
+            if (existsEv.failed()) {
+                log.error("LIST exists request in storage {} failed with message", storageIdentifier,
+                        exceptionFactory.newException("redisAPI.exists() failed", existsEv.cause()));
+                result.error = true;
+                result.errorMessage = "redisAPI.exists() failed: " + existsEv.cause().getMessage();
+            } else {
+                result.exists = existsEv.result().toLong() > 0;
+            }
+            handler.handle(result);
+        });
+    }
+
+    private String decodeResourceKey(String resourceKey) {
+        String encodedPath = resourceKey.substring(redisResourcesPrefix.length());
+        return ResourceNameUtil.resetReplacedColonsAndSemiColons(encodedPath.replaceAll(":", "/"));
+    }
+
+    private String escapeRedisGlob(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '*' || c == '?' || c == '[' || c == ']' || c == '\\') {
+                escaped.append('\\');
+            }
+            escaped.append(c);
+        }
+        return escaped.toString();
     }
 
     /**
@@ -1292,6 +1509,14 @@ public class RedisStorage implements Storage {
     private void notModified(Handler<Resource> handler) {
         Resource r = new Resource();
         r.modified = false;
+        handler.handle(r);
+    }
+
+    private void pathListError(Handler<PathListResource> handler, String message) {
+        PathListResource r = new PathListResource();
+        r.error = true;
+        r.errorMessage = message;
+        r.paths = Collections.emptyList();
         handler.handle(r);
     }
 

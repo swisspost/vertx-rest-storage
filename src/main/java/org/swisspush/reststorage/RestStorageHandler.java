@@ -28,6 +28,9 @@ import static org.swisspush.reststorage.util.HttpRequestParam.*;
 
 public class RestStorageHandler implements Handler<HttpServerRequest> {
 
+    private static final int MAX_FILTER_LENGTH = 256;
+    private static final int MAX_LIST_LIMIT = 500;
+
     private final Logger log;
     private final Router router;
     private final Storage storage;
@@ -625,35 +628,56 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
         if (!containsParam(request.params(), STORAGE_EXPAND_PARAMETER)) {
             respondWithNotAllowed(request);
         } else {
-            request.bodyHandler(bodyBuf -> {
-                List<String> subResourceNames = new ArrayList<>();
-                try {
-                    JsonObject body = new JsonObject(bodyBuf);
-                    JsonArray subResourcesArray = body.getJsonArray("subResources");
-                    if (subResourcesArray == null) {
-                        respondWithBadRequest(request, "Bad Request: Expected array field 'subResources' with names of resources");
-                        return;
-                    }
-
-                    if (checkMaxSubResourcesCount(request, subResourcesArray.size())) {
-                        return;
-                    }
-
-                    for (int i = 0; i < subResourcesArray.size(); i++) {
-                        subResourceNames.add(subResourcesArray.getString(i));
-                    }
-                    ResourceNameUtil.replaceColonsAndSemiColonsInList(subResourceNames);
-                } catch (RuntimeException ex) {
-                    log.warn("KISS handler is not interested in error details. I'll report them here then.", ex);
-                    respondWithBadRequest(request, "Bad Request: Unable to parse body of storageExpand POST request");
-                    return;
-                }
-
+            if (getBoolean(request.params(), LIST_ONLY_PARAMETER)) {
                 final String path = cleanPath(request.path().substring(prefixFixed.length()));
-                final String etag = request.headers().get(IF_NONE_MATCH_HEADER.getName());
-                storage.storageExpand(path, etag, subResourceNames, resource -> {
-                    var rsp = ctx.response();
+                String filter = getString(request.params(), FILTER_PARAMETER);
+                if (filter != null && !filter.isEmpty()) {
+                    if (filter.length() > MAX_FILTER_LENGTH) {
+                        respondWithBadRequest(request,
+                                "Bad Request: Filter exceeds maximum length of " + MAX_FILTER_LENGTH + " characters");
+                        return;
+                    }
+                }
+                final String pathFilter = filter;
 
+                String limitParam = getString(request.params(), LIMIT_PARAMETER);
+                int parsedLimit = MAX_LIST_LIMIT;
+                if (limitParam != null && !limitParam.isEmpty()) {
+                    try {
+                        parsedLimit = Integer.parseInt(limitParam);
+                    } catch (NumberFormatException ex) {
+                        respondWithBadRequest(request,
+                                "Bad Request: limit must be a positive integer");
+                        return;
+                    }
+                    if (parsedLimit <= 0) {
+                        respondWithBadRequest(request,
+                                "Bad Request: limit must be a positive integer");
+                        return;
+                    }
+                    if (parsedLimit > MAX_LIST_LIMIT) {
+                        respondWithBadRequest(request,
+                                "Bad Request: limit exceeds maximum allowed value of " + MAX_LIST_LIMIT);
+                        return;
+                    }
+                }
+                final int limit = parsedLimit;
+                String cursorParam = getString(request.params(), CURSOR_PARAMETER);
+                long cursor = 0;
+                if (cursorParam != null && !cursorParam.isEmpty()) {
+                    try {
+                        cursor = Long.parseLong(cursorParam);
+                    } catch (NumberFormatException ex) {
+                        respondWithBadRequest(request, "Bad Request: cursor must be a non-negative integer");
+                        return;
+                    }
+                    if (cursor < 0) {
+                        respondWithBadRequest(request, "Bad Request: cursor must be a non-negative integer");
+                        return;
+                    }
+                }
+                storage.list(path, limit, pathFilter, cursor, resource -> {
+                    var rsp = ctx.response();
                     if (resource.error) {
                         rsp.setStatusCode(StatusCode.CONFLICT.getStatusCode());
                         rsp.setStatusMessage(StatusCode.CONFLICT.getStatusMessage());
@@ -664,58 +688,116 @@ public class RestStorageHandler implements Handler<HttpServerRequest> {
                         rsp.end(message);
                         return;
                     }
-
-                    if (resource.invalid) {
-                        rsp.setStatusCode(StatusCode.INTERNAL_SERVER_ERROR.getStatusCode());
-                        rsp.setStatusMessage(StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage());
-
-                        String message = StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage();
-                        if (resource.invalidMessage != null) {
-                            message = resource.invalidMessage;
-                        }
-                        rsp.end(new JsonObject().put("error", message).encode());
-                        return;
-                    }
-
-                    if (!resource.modified) {
-                        rsp.setStatusCode(StatusCode.NOT_MODIFIED.getStatusCode());
-                        rsp.setStatusMessage(StatusCode.NOT_MODIFIED.getStatusMessage());
-                        rsp.headers().set(ETAG_HEADER.getName(), etag);
-                        rsp.headers().add(CONTENT_LENGTH.getName(), "0");
-                        rsp.end();
-                        return;
-                    }
-
-                    if (resource.exists) {
-                        if (log.isTraceEnabled()) {
-                            log.trace("RestStorageHandler resource is a DocumentResource: {}", request.uri());
-                        }
-
-                        String mimeType = mimeTypeResolver.resolveMimeType(path);
-                        final DocumentResource documentResource = (DocumentResource) resource;
-                        if (documentResource.etag != null && !documentResource.etag.isEmpty()) {
-                            rsp.headers().add(ETAG_HEADER.getName(), documentResource.etag);
-                        }
-                        rsp.headers().add(CONTENT_LENGTH.getName(), "" + documentResource.length);
-                        rsp.headers().add(CONTENT_TYPE.getName(), mimeType);
-                        final Pump pump = Pump.pump(documentResource.readStream, rsp);
-                        documentResource.readStream.endHandler(nothing -> {
-                            documentResource.closeHandler.handle(null);
-                            rsp.end();
-                        });
-                        pump.start();
-                        // TODO: exception handlers
-
-                    } else {
-                        if (log.isTraceEnabled()) {
-                            log.trace("RestStorageHandler Could not find resource: {}", request.uri());
-                        }
+                    if (!resource.exists) {
                         rsp.setStatusCode(StatusCode.NOT_FOUND.getStatusCode());
                         rsp.setStatusMessage(StatusCode.NOT_FOUND.getStatusMessage());
                         rsp.end(StatusCode.NOT_FOUND.toString());
+                        return;
                     }
+
+                    List<String> paths = resource.paths;
+
+                    String body = new JsonObject()
+                            .put("paths", new JsonArray(paths))
+                            .put("nextCursor", resource.nextCursor)
+                            .encode();
+                    rsp.headers().add(CONTENT_LENGTH.getName(), "" + body.getBytes(UTF_8).length);
+                    rsp.headers().add(CONTENT_TYPE.getName(), "application/json; charset=utf-8");
+                    rsp.end(body);
                 });
-            });
+            } else {
+                request.bodyHandler(bodyBuf -> {
+                    List<String> subResourceNames = new ArrayList<>();
+                    try {
+                        JsonObject body = new JsonObject(bodyBuf);
+                        JsonArray subResourcesArray = body.getJsonArray("subResources");
+                        if (subResourcesArray == null) {
+                            respondWithBadRequest(request, "Bad Request: Expected array field 'subResources' with names of resources");
+                            return;
+                        }
+
+                        if (checkMaxSubResourcesCount(request, subResourcesArray.size())) {
+                            return;
+                        }
+
+                        for (int i = 0; i < subResourcesArray.size(); i++) {
+                            subResourceNames.add(subResourcesArray.getString(i));
+                        }
+                        ResourceNameUtil.replaceColonsAndSemiColonsInList(subResourceNames);
+                    } catch (RuntimeException ex) {
+                        log.warn("KISS handler is not interested in error details. I'll report them here then.", ex);
+                        respondWithBadRequest(request, "Bad Request: Unable to parse body of storageExpand POST request");
+                        return;
+                    }
+
+                    final String path = cleanPath(request.path().substring(prefixFixed.length()));
+                    final String etag = request.headers().get(IF_NONE_MATCH_HEADER.getName());
+                    storage.storageExpand(path, etag, subResourceNames, resource -> {
+                        var rsp = ctx.response();
+
+                        if (resource.error) {
+                            rsp.setStatusCode(StatusCode.CONFLICT.getStatusCode());
+                            rsp.setStatusMessage(StatusCode.CONFLICT.getStatusMessage());
+                            String message = StatusCode.CONFLICT.getStatusMessage();
+                            if (resource.errorMessage != null) {
+                                message = resource.errorMessage;
+                            }
+                            rsp.end(message);
+                            return;
+                        }
+
+                        if (resource.invalid) {
+                            rsp.setStatusCode(StatusCode.INTERNAL_SERVER_ERROR.getStatusCode());
+                            rsp.setStatusMessage(StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage());
+
+                            String message = StatusCode.INTERNAL_SERVER_ERROR.getStatusMessage();
+                            if (resource.invalidMessage != null) {
+                                message = resource.invalidMessage;
+                            }
+                            rsp.end(new JsonObject().put("error", message).encode());
+                            return;
+                        }
+
+                        if (!resource.modified) {
+                            rsp.setStatusCode(StatusCode.NOT_MODIFIED.getStatusCode());
+                            rsp.setStatusMessage(StatusCode.NOT_MODIFIED.getStatusMessage());
+                            rsp.headers().set(ETAG_HEADER.getName(), etag);
+                            rsp.headers().add(CONTENT_LENGTH.getName(), "0");
+                            rsp.end();
+                            return;
+                        }
+
+                        if (resource.exists) {
+                            if (log.isTraceEnabled()) {
+                                log.trace("RestStorageHandler resource is a DocumentResource: {}", request.uri());
+                            }
+
+                            String mimeType = mimeTypeResolver.resolveMimeType(path);
+                            final DocumentResource documentResource = (DocumentResource) resource;
+                            if (documentResource.etag != null && !documentResource.etag.isEmpty()) {
+                                rsp.headers().add(ETAG_HEADER.getName(), documentResource.etag);
+                            }
+                            rsp.headers().add(CONTENT_LENGTH.getName(), "" + documentResource.length);
+                            rsp.headers().add(CONTENT_TYPE.getName(), mimeType);
+                            final Pump pump = Pump.pump(documentResource.readStream, rsp);
+                            documentResource.readStream.endHandler(nothing -> {
+                                documentResource.closeHandler.handle(null);
+                                rsp.end();
+                            });
+                            pump.start();
+                            // TODO: exception handlers
+
+                        } else {
+                            if (log.isTraceEnabled()) {
+                                log.trace("RestStorageHandler Could not find resource: {}", request.uri());
+                            }
+                            rsp.setStatusCode(StatusCode.NOT_FOUND.getStatusCode());
+                            rsp.setStatusMessage(StatusCode.NOT_FOUND.getStatusMessage());
+                            rsp.end(StatusCode.NOT_FOUND.toString());
+                        }
+                    });
+                });
+            }
         }
     }
 

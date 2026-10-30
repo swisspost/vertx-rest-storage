@@ -14,6 +14,7 @@ import org.swisspush.reststorage.util.ModuleConfiguration;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Default implementation for a Provider for {@link RedisAPI}
@@ -23,6 +24,9 @@ import java.util.List;
 public class DefaultRedisProvider implements RedisProvider {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultRedisProvider.class);
+    private static final int REQUEST_DRIVEN = -1;
+    private static final long MAX_RECONNECT_BACKOFF_MS = 5 * 60 * 1000L;
+    private static final long DEFAULT_PROBE_INTERVAL_MS = 10_000L;
     private final Vertx vertx;
 
     private final ModuleConfiguration configuration;
@@ -35,6 +39,11 @@ public class DefaultRedisProvider implements RedisProvider {
     private Promise<RedisAPI> connectPromise;
     private Long reconnectTimer;
     private boolean reconnecting;
+    private long lastAttemptNanos = System.nanoTime();
+    // Retry index of a scheduled attempt whose timer fired while a request-driven probe was in flight.
+    private int deferredRetry = -1;
+    // Minimum time between request-driven probes while an automatic reconnect is pending.
+    volatile long probeIntervalMs = DEFAULT_PROBE_INTERVAL_MS;
 
     public DefaultRedisProvider(
             Vertx vertx,
@@ -55,11 +64,14 @@ public class DefaultRedisProvider implements RedisProvider {
     }
 
     @Override
-    public synchronized Future<RedisAPI> redis() {
-        if (redisAPI == null) {
-            return connectToRedis(0);
+    public Future<RedisAPI> redis() {
+        RedisAPI api;
+        synchronized (this) {
+            api = redisAPI;
         }
-        RedisAPI api = redisAPI;
+        if (api == null) {
+            return connectToRedis(REQUEST_DRIVEN);
+        }
         if (readyProvider == null) {
             return Future.succeededFuture(api);
         }
@@ -75,53 +87,85 @@ public class DefaultRedisProvider implements RedisProvider {
         return configuration.getRedisReconnectAttempts() != 0;
     }
 
-    private synchronized Future<RedisAPI> connectToRedis(int retry) {
-        if (connectPromise != null) {
-            return connectPromise.future();
+    private boolean probeDue() {
+        return System.nanoTime() - lastAttemptNanos >= TimeUnit.MILLISECONDS.toNanos(probeIntervalMs);
+    }
+
+    /**
+     * @param retry index of the automatic reconnect attempt, or {@link #REQUEST_DRIVEN} when triggered by a request
+     */
+    private Future<RedisAPI> connectToRedis(int retry) {
+        Promise<RedisAPI> promise = Promise.promise();
+        Throwable startFailure = null;
+        synchronized (this) {
+            if (connectPromise != null) {
+                if (retry >= 0) {
+                    // A request-driven attempt got in first; resume the automatic sequence if it fails.
+                    deferredRetry = retry;
+                }
+                return connectPromise.future();
+            }
+            if (redisAPI != null) {
+                // Already connected, e.g. a request-driven attempt succeeded before a timer-driven one could start.
+                return Future.succeededFuture(redisAPI);
+            }
+            if (retry == REQUEST_DRIVEN) {
+                // A pending reconnect timer is never cancelled by requests. At most one throttled probe is allowed.
+                if (reconnectTimer != null && !probeDue()) {
+                    return Future.failedFuture(exceptionFactory.newException("redis reconnect pending"));
+                }
+            }
+            lastAttemptNanos = System.nanoTime();
+            connectPromise = promise;
+            try {
+                startConnect(promise, retry);
+            } catch (RuntimeException ex) {
+                startFailure = ex;
+                connectFailed(retry);
+            }
         }
-        if (reconnectTimer != null) {
-            vertx.cancelTimer(reconnectTimer);
-            reconnectTimer = null;
+        // Complete outside the lock so callers' callbacks never run while holding it.
+        if (startFailure != null) {
+            promise.fail(exceptionFactory.newException("redis.connect() failed", startFailure));
         }
+        return promise.future();
+    }
+
+    private void startConnect(Promise<RedisAPI> promise, int retry) {
         String redisAuth = configuration.getRedisAuth();
         int redisMaxPoolSize = configuration.getMaxRedisConnectionPoolSize();
         int redisMaxPoolWaitingSize = configuration.getMaxQueueWaiting();
         int redisMaxPipelineWaitingSize = configuration.getMaxRedisWaitingHandlers();
         int redisPoolRecycleTimeoutMs = configuration.getRedisPoolRecycleTimeoutMs();
 
-        Promise<RedisAPI> promise = Promise.promise();
-        connectPromise = promise;
-        try {
-            if (redis != null) {
-                redis.close();
-                redis = null;
-            }
-            RedisOptions redisOptions = new RedisOptions()
-                    .setPassword((redisAuth == null ? "" : redisAuth))
-                    .setMaxPoolSize(redisMaxPoolSize)
-                    .setMaxPoolWaiting(redisMaxPoolWaitingSize)
-                    .setPoolRecycleTimeout(redisPoolRecycleTimeoutMs)
-                    .setMaxWaitingHandlers(redisMaxPipelineWaitingSize)
-                    .setType(configuration.getRedisClientType());
+        if (redis != null) {
+            redis.close();
+            redis = null;
+        }
+        RedisOptions redisOptions = new RedisOptions()
+                .setPassword((redisAuth == null ? "" : redisAuth))
+                .setMaxPoolSize(redisMaxPoolSize)
+                .setMaxPoolWaiting(redisMaxPoolWaitingSize)
+                .setPoolRecycleTimeout(redisPoolRecycleTimeoutMs)
+                .setMaxWaitingHandlers(redisMaxPipelineWaitingSize)
+                .setType(configuration.getRedisClientType());
 
-            if (configuration.isRedisEnableTls()) {
-                redisOptions = redisOptions.setNetClientOptions(
-                        redisOptions.getNetClientOptions()
-                                .setSsl(configuration.isSsl())
-                                .setTrustAll(configuration.isTrustAll())
-                                .setHostnameVerificationAlgorithm(configuration.getHostnameVerificationAlgorithm())
-                );
-            }
+        if (configuration.isRedisEnableTls()) {
+            redisOptions = redisOptions.setNetClientOptions(
+                    redisOptions.getNetClientOptions()
+                            .setSsl(configuration.isSsl())
+                            .setTrustAll(configuration.isTrustAll())
+                            .setHostnameVerificationAlgorithm(configuration.getHostnameVerificationAlgorithm())
+            );
+        }
 
-            createConnectStrings().forEach(redisOptions::addConnectionString);
-            redis = Redis.createClient(vertx, redisOptions);
+        createConnectStrings().forEach(redisOptions::addConnectionString);
+        redis = Redis.createClient(vertx, redisOptions);
 
-            redis.connect().onComplete(ev -> {
-                synchronized (DefaultRedisProvider.this) {
-                    if (ev.failed()) {
-                        connectionFailed(promise, ev.cause(), retry);
-                        return;
-                    }
+        redis.connect().onComplete(ev -> {
+            RedisAPI connected = null;
+            synchronized (DefaultRedisProvider.this) {
+                if (ev.succeeded()) {
                     connectPromise = null;
                     RedisConnection conn = ev.result();
                     log.info("Successfully connected to redis");
@@ -130,22 +174,46 @@ public class DefaultRedisProvider implements RedisProvider {
                     conn.endHandler(nothing -> connectionLost(conn, null));
                     redisAPI = RedisAPI.api(conn);
                     reconnecting = false;
-                    promise.complete(redisAPI);
+                    deferredRetry = -1;
+                    if (reconnectTimer != null) {
+                        // A successful probe makes the pending automatic retry obsolete.
+                        vertx.cancelTimer(reconnectTimer);
+                        reconnectTimer = null;
+                    }
+                    connected = redisAPI;
+                } else {
+                    if (retry >= 0 && reconnecting && reconnectEnabled()) {
+                        log.warn("redis reconnect attempt #{} failed", retry, ev.cause());
+                    }
+                    connectFailed(retry);
                 }
-            });
-        } catch (RuntimeException ex) {
-            connectionFailed(promise, ex, retry);
-        }
-        return promise.future();
+            }
+            // Complete outside the lock so callers' callbacks never run while holding it.
+            if (connected != null) {
+                promise.complete(connected);
+            } else {
+                promise.fail(exceptionFactory.newException("redis.connect() failed", ev.cause()));
+            }
+        });
     }
 
-    private synchronized void connectionFailed(Promise<RedisAPI> promise, Throwable cause, int retry) {
+    private synchronized void connectFailed(int retry) {
         connectPromise = null;
-        if (reconnecting && reconnectEnabled()) {
-            log.warn("redis reconnect attempt #{} failed", retry, cause);
-            attemptReconnect(retry + 1);
+        if (redis != null) {
+            redis.close();
+            redis = null;
         }
-        promise.fail(exceptionFactory.newException("redis.connect() failed", cause));
+        // Only automatic attempts continue the retry sequence; request-driven ones must not re-arm it.
+        if (retry >= 0 && reconnecting && reconnectEnabled()) {
+            attemptReconnect(retry + 1);
+        } else if (retry < 0 && deferredRetry >= 0) {
+            // The scheduled timer fired during this failed probe; continue its retry sequence.
+            int resume = deferredRetry;
+            deferredRetry = -1;
+            if (reconnecting && reconnectEnabled()) {
+                attemptReconnect(resume);
+            }
+        }
     }
 
     private synchronized void connectionLost(RedisConnection connection, Throwable cause) {
@@ -156,6 +224,7 @@ public class DefaultRedisProvider implements RedisProvider {
         client = null;
         redisAPI = null;
         reconnecting = true;
+        lastAttemptNanos = System.nanoTime();
         if (cause == null) {
             log.warn("redis connection got closed");
         } else {
@@ -194,7 +263,8 @@ public class DefaultRedisProvider implements RedisProvider {
             log.warn("Not reconnecting anymore since max reconnect attempts ({}) are reached", reconnectAttempts);
             return;
         }
-        long backoffMs = (1L << Math.min(retry, 10)) * configuration.getRedisReconnectDelaySec() * 1000L;
+        long baseMs = configuration.getRedisReconnectDelaySec() * 1000L;
+        long backoffMs = Math.min((1L << Math.min(retry, 10)) * baseMs, Math.max(MAX_RECONNECT_BACKOFF_MS, baseMs));
         log.debug("Schedule reconnect #{} in {}ms.", retry, backoffMs);
         reconnectTimer = vertx.setTimer(backoffMs, timer -> {
             synchronized (DefaultRedisProvider.this) {
@@ -202,11 +272,15 @@ public class DefaultRedisProvider implements RedisProvider {
                     return;
                 }
                 reconnectTimer = null;
-                if (!reconnectEnabled()) {
+                if (!reconnectEnabled() || client != null) {
                     return;
                 }
-                connectToRedis(retry);
+                if (connectPromise != null) {
+                    deferredRetry = retry;
+                    return;
+                }
             }
+            connectToRedis(retry);
         });
     }
 }
